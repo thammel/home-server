@@ -6,6 +6,7 @@ from app.database import SessionLocal
 
 router = APIRouter()
 
+
 def get_db():
     db = SessionLocal()
     try:
@@ -13,22 +14,34 @@ def get_db():
     finally:
         db.close()
 
+
 @router.get("/", response_model=list[schemas.BalanceRead])
 def get_balances(db: Session = Depends(get_db)):
     users = db.query(models.User).all()
-    balances = {u.id: 0.0 for u in users}
+    balances = {u.id: {u1.id: 0.0 for u1 in users if u1.id != u.id} for u in users}
 
     expenses = db.query(models.Expense).all()
     for expense in expenses:
-        balances[expense.paid_by_id] += expense.amount
-        for share in expense.shares:
-            balances[share.user_id] -= share.share_amount
+        payers = [s for s in expense.shares if s.share < 0]
+        debtors = [s for s in expense.shares if s.share > 0]
+        total_paid = sum(-s.share for s in payers)
+
+        if total_paid <= 0:
+            continue
+
+        for debtor in debtors:
+            for payer in payers:
+                portion = debtor.share * (-payer.share / total_paid)
+                # This does it differently then Splitwise
+                # Splitwise does only keep track of owed amounts
+                balances[debtor.user_id][payer.user_id] -= portion
+                balances[payer.user_id][debtor.user_id] += portion
 
     return [
         schemas.BalanceRead(
             user_id=u.id,
             name=u.name,
-            balance=round(balances[u.id], 2)
+            balance=round(sum(balances[u.id].values()), 2)
         )
         for u in users
     ]

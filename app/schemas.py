@@ -1,8 +1,12 @@
+import datetime
+
 from pydantic import BaseModel
 from typing import List
 
+
 class UserCreate(BaseModel):
     name: str
+
 
 class UserRead(BaseModel):
     id: int
@@ -11,19 +15,35 @@ class UserRead(BaseModel):
     class Config:
         from_attributes = True
 
+
 class ExpenseShareCreate(BaseModel):
     user_id: int
-    share_amount: float
+    share: float
+
 
 class ExpenseCreate(BaseModel):
+    date: datetime.date
     description: str
-    amount: float
-    paid_by_id: int
+    category: str
+    cost: float
+    currency: str
+    comment: str | None
     shares: List[ExpenseShareCreate]
+
+
+class ExpenseUpdate(BaseModel):
+    date: datetime.date | None
+    description: str | None
+    category: str | None
+    cost: float | None
+    currency: str | None
+    comment: str | None
+    shares: List[ExpenseShareCreate] | None
+
 
 class ExpenseShareRead(BaseModel):
     user_id: int
-    share_amount: float
+    share: float
 
     class Config:
         from_attributes = True
@@ -31,13 +51,17 @@ class ExpenseShareRead(BaseModel):
 
 class ExpenseRead(BaseModel):
     id: int
+    date: datetime.date
     description: str
-    amount: float
-    paid_by_id: int
+    category: str
+    cost: float
+    currency: str
+    comment: str | None
     shares: List[ExpenseShareRead]
 
     class Config:
         from_attributes = True
+
 
 class BalanceRead(BaseModel):
     user_id: int

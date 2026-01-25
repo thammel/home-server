@@ -15,14 +15,21 @@ app.include_router(balances.router, prefix="/api/balances", tags=["Balances"])
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
+
 @app.get("/")
 def root():
     return FileResponse("app/static/index.html")
+
 
 @app.get("/users/{user_id}")
 def user_page(user_id: int):
     return FileResponse("app/static/user.html")
 
+
 @app.get("/expenses")
 def expenses_page():
+    return FileResponse("app/static/expenses.html")
+
+@app.get("/expenses/{expense_id}")
+def expense_page(expense_id: int):
     return FileResponse("app/static/expense.html")
