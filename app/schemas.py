@@ -1,6 +1,6 @@
 import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import List
 
 
@@ -12,8 +12,7 @@ class UserRead(BaseModel):
     id: int
     name: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ExpenseShareCreate(BaseModel):
@@ -45,8 +44,7 @@ class ExpenseShareRead(BaseModel):
     user_id: int
     share: float
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ExpenseRead(BaseModel):
@@ -59,8 +57,7 @@ class ExpenseRead(BaseModel):
     comment: str | None
     shares: List[ExpenseShareRead]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BalanceRead(BaseModel):
