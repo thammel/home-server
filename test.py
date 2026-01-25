@@ -133,5 +133,5 @@ if __name__ == "__main__":
     df.loc[(df["Date"] == "2025-12-16") & (df["Description"] == "Tierarzt "), "Comment"] = "Meine Mutter hat uns 50€ zu den Kosten dazu gegeben"
     df = df[["Date", "Description", "Category", "Cost", "Currency", "Comment", "Tom Hammel", "Nicola Becker"]]
     df.to_csv("expenses_exported.csv", index=False)"""
-    manager = Manager("expenses_exported.csv")
+    manager = Manager("Splitwise expenses Jan 2.csv")
     print(manager)

@@ -1,84 +1,27 @@
 import { api } from "./api.js";
 
-async function renderUserShareFields() {
-    const container = document.getElementById('shares-container');
-    container.innerHTML = 'Loading users...';
+const expenseId = parseInt(window.location.pathname.split("/").pop());
 
-    try {
-        const users = await api.getUsers();
+window.onload = async () => {
+    const params = new URLSearchParams(window.location.search);
+    const next = params.get("next") || "/";
+    const backLink = document.getElementById("back-link");
+    if (backLink) backLink.href = next;
 
-        container.innerHTML = '';
-        users.forEach(u => {
-            const row = document.createElement('div');
-            row.className = 'share-row';
-            row.style.marginBottom = '6px';
+    const expense = await api.getExpense(expenseId);
 
-            const label = document.createElement('label');
-            label.textContent = u.name;
-            label.style.marginRight = '8px';
-            label.htmlFor = `share-${u.id}`;
+    document.getElementById("expense-date").textContent = new Date(expense.date).toLocaleDateString();
+    document.getElementById("expense-description").textContent = expense.description;
+    document.getElementById("expense-category").textContent = expense.category;
+    document.getElementById("expense-cost").textContent = `${expense.cost} ${expense.currency}`;
+    document.getElementById("expense-comment").textContent = expense.comment || "";
 
-            const input = document.createElement('input');
-            input.type = 'number';
-            input.id = `share-${u.id}`;
-            input.name = `share-${u.id}`;
-            input.dataset.userId = u.id;
-            input.min = 0;
-            input.max = 100;
-            input.step = 0.01;
-            input.value = 0;
+    const sharesList = document.getElementById("expense-shares");
+    sharesList.innerHTML = "";
 
-            row.appendChild(label);
-            row.appendChild(input);
-            container.appendChild(row);
-        });
-
-        if (users.length === 0) container.innerHTML = '<em>No users found.</em>';
-    } catch (err) {
-        container.innerHTML = '<em>Failed to load users.</em>';
-        console.error(err);
-    }
-}
-
-function collectSharesAsPercentages() {
-    const inputs = document.querySelectorAll('#shares-container input[type="number"]');
-    const shares = [];
-    inputs.forEach(i => {
-        const pct = parseFloat(i.value) || 0;
-        shares.push({ user_id: parseInt(i.dataset.userId, 10), percent: pct });
+    expense.shares.forEach(s => {
+        const li = document.createElement("li");
+        li.textContent = `User ID: ${s.user_id}, Share: ${s.share} ${expense.currency}`;
+        sharesList.appendChild(li);
     });
-    return shares;
-}
-
-async function addExpense() {
-    const description = document.getElementById("description").value;
-    const amount = parseFloat(document.getElementById("amount").value);
-    const paidById = parseInt(document.getElementById("paid-by").value);
-
-    const sharesPercentages = collectSharesAsPercentages();
-    const totalPercentage = sharesPercentages.reduce((sum, s) => sum + s.percent, 0);
-
-    if (totalPercentage !== 100) {
-        alert("Total share percentages must equal 100%.");
-        return;
-    }
-
-    const expense = {
-        description: description,
-        amount: amount,
-        paid_by_id: paidById,
-        shares: sharesPercentages.map(s => ({
-            user_id: s.user_id,
-            share_amount: (s.percent / 100) * amount
-        }))
-    };
-
-    await api.addExpense(expense);
-    
-    window.location.href = "/";
-}
-
-// initialize on load
-renderUserShareFields();
-
-window.addExpense = addExpense;
+};

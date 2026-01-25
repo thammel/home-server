@@ -26,6 +26,10 @@ export const api = {
         return request("/api/expenses/");
     },
 
+    getExpense(expenseId) {
+        return request(`/api/expenses/${expenseId}/`);
+    },
+
     getBalances() {
         return request("/api/balances/");
     },
