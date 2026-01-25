@@ -31,6 +31,8 @@ def get_balances(db: Session = Depends(get_db)):
 
         for debtor in debtors:
             for payer in payers:
+                if debtor.user_id == payer.user_id:
+                    continue
                 portion = debtor.share * (-payer.share / total_paid)
                 # This does it differently then Splitwise
                 # Splitwise does only keep track of owed amounts
