@@ -19,7 +19,8 @@ async function init() {
         const password = document.getElementById("login-password").value;
 
         try {
-            await api.login({ name, password });
+            const user = await api.login({ name, password });
+            document.getElementById("admin-btn").style.display = user.is_admin ? "inline-block" : "none";
             const params = new URLSearchParams(window.location.search);
             const next = params.get("next") || "/";
             window.location.href = next;
@@ -38,6 +39,8 @@ async function init() {
     });
 
     try {
+        const me = await api.getMe();
+        document.getElementById("admin-btn").style.display = me.is_admin ? "inline-block" : "none";
         await loadBalances();
         loginSection.style.display = "none";
         appSection.style.display = "block";

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin – Flat Expenses</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<h1>Admin</h1>
+<p><a href="/">← Back</a></p>
+
+<section>
+    <h2>Users</h2>
+    <table id="users-table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Admin</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody id="users-body"></tbody>
+    </table>
+</section>
+
+<section>
+    <h2>Add User</h2>
+    <form id="add-user-form">
+        <input id="new-name" placeholder="Username" autocomplete="off" required>
+        <input id="new-password" type="password" placeholder="Password" required>
+        <button type="submit">Add User</button>
+    </form>
+    <p id="add-user-error" style="color:#b00020"></p>
+</section>
+
+<script type="module" src="/static/js/admin.js"></script>
+</body>
+</html>
