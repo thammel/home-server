@@ -11,17 +11,7 @@ from app.auth import get_current_user, get_db, hash_password
 from app.routers.api import auth, balances, expenses, users
 
 
-@pytest.fixture()
-def client():
-    _ = models
-    engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    Base.metadata.create_all(bind=engine)
-
+def _make_app(session_factory, current_user_id: int) -> FastAPI:
     app = FastAPI()
     app.include_router(auth.router, prefix="/api/auth")
     app.include_router(users.router, prefix="/api/users")
@@ -29,30 +19,65 @@ def client():
     app.include_router(balances.router, prefix="/api/balances")
 
     def override_get_db():
-        db = TestingSessionLocal()
+        db = session_factory()
         try:
             yield db
         finally:
             db.close()
 
-    # Pre-create admin user that get_current_user will return
-    test_db = TestingSessionLocal()
-    admin = models.User(name="TestAdmin", password_hash=hash_password("testpass"), is_admin=True)
-    test_db.add(admin)
-    test_db.commit()
-    test_db.refresh(admin)
-    admin_id = admin.id
-    test_db.close()
-
     def override_get_current_user():
-        db = TestingSessionLocal()
-        user = db.query(models.User).filter(models.User.id == admin_id).first()
+        db = session_factory()
+        user = db.query(models.User).filter(models.User.id == current_user_id).first()
         db.close()
         return user
 
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_current_user] = override_get_current_user
+    return app
 
+
+def _make_db():
+    _ = models
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    session_factory = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    Base.metadata.create_all(bind=engine)
+    return session_factory
+
+
+@pytest.fixture()
+def client():
+    session_factory = _make_db()
+    db = session_factory()
+    admin = models.User(name="TestAdmin", password_hash=hash_password("testpass"), is_admin=True)
+    db.add(admin)
+    db.commit()
+    db.refresh(admin)
+    admin_id = admin.id
+    db.close()
+
+    app = _make_app(session_factory, admin_id)
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+@pytest.fixture()
+def non_admin_client():
+    session_factory = _make_db()
+    db = session_factory()
+    admin = models.User(name="TestAdmin", password_hash=hash_password("testpass"), is_admin=True)
+    regular = models.User(name="TestUser", password_hash=hash_password("testpass"), is_admin=False)
+    db.add(admin)
+    db.add(regular)
+    db.commit()
+    db.refresh(regular)
+    regular_id = regular.id
+    db.close()
+
+    app = _make_app(session_factory, regular_id)
     with TestClient(app) as test_client:
         yield test_client
 
@@ -76,12 +101,16 @@ def test_create_and_list_users(client: TestClient):
     assert alice["id"] == user_id
 
 
-def test_first_user_is_not_admin(client: TestClient):
-    # TestAdmin already exists so next user should not be admin
+def test_new_user_is_not_admin(client: TestClient):
     user_id = create_user(client, "RegularUser")
     res = client.get(f"/api/users/{user_id}")
     assert res.status_code == 200
     assert res.json()["is_admin"] is False
+
+
+def test_create_user_requires_admin(non_admin_client: TestClient):
+    res = non_admin_client.post("/api/users/", json={"name": "NewUser", "password": "pass"})
+    assert res.status_code == 403
 
 
 def test_login_success(client: TestClient):
@@ -105,10 +134,63 @@ def test_logout(client: TestClient):
     assert logout_res.status_code == 204
 
 
-def test_rename_user_duplicate_returns_409(client: TestClient):
+def test_update_user_rename(client: TestClient):
+    user_id = create_user(client, "UserA")
+    res = client.patch(f"/api/users/{user_id}", json={"name": "UserA-renamed"})
+    assert res.status_code == 200
+    assert res.json()["name"] == "UserA-renamed"
+
+
+def test_update_user_rename_duplicate_returns_409(client: TestClient):
     create_user(client, "UserA")
     user_b_id = create_user(client, "UserB")
-    res = client.patch(f"/api/users/{user_b_id}", params={"new_username": "UserA"})
+    res = client.patch(f"/api/users/{user_b_id}", json={"name": "UserA"})
+    assert res.status_code == 409
+
+
+def test_update_user_toggle_admin(client: TestClient):
+    user_id = create_user(client, "PromotedUser")
+    res = client.patch(f"/api/users/{user_id}", json={"is_admin": True})
+    assert res.status_code == 200
+    assert res.json()["is_admin"] is True
+
+    res = client.patch(f"/api/users/{user_id}", json={"is_admin": False})
+    assert res.status_code == 200
+    assert res.json()["is_admin"] is False
+
+
+def test_update_user_toggle_admin_requires_admin(non_admin_client: TestClient):
+    res = non_admin_client.patch("/api/users/1", json={"is_admin": True})
+    assert res.status_code == 403
+
+
+def test_delete_user(client: TestClient):
+    user_id = create_user(client, "DeleteMe")
+    res = client.delete(f"/api/users/{user_id}")
+    assert res.status_code == 204
+
+    res = client.get("/api/users/")
+    names = [u["name"] for u in res.json()]
+    assert "DeleteMe" not in names
+
+
+def test_delete_user_requires_admin(non_admin_client: TestClient):
+    res = non_admin_client.delete("/api/users/1")
+    assert res.status_code == 403
+
+
+def test_delete_self_forbidden(client: TestClient):
+    res = client.get("/api/users/me")
+    admin_id = res.json()["id"]
+    res = client.delete(f"/api/users/{admin_id}")
+    assert res.status_code == 403
+
+
+def test_delete_last_admin_forbidden(client: TestClient):
+    res = client.get("/api/users/me")
+    admin_id = res.json()["id"]
+    create_user(client, "NonAdmin")
+    res = client.patch(f"/api/users/{admin_id}", json={"is_admin": False})
     assert res.status_code == 409
 
 

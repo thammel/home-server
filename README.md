@@ -1,12 +1,15 @@
-﻿# HomeServer - Flat Expenses
+# HomeServer - Flat Expenses
 
 Small FastAPI app to track shared expenses and compute balances between users.
 
 ## Features
+- Session-based authentication (cookie)
+- Role-based access: admin and regular users
 - Users, expenses, and balances API
 - Supports multiple payers and multiple consumers per expense
 - SQLite storage via SQLAlchemy
 - Simple static frontend pages
+- Admin screen for user management
 
 ## Tech
 - Python 3.13
@@ -31,19 +34,39 @@ uvicorn app.main:app --reload
 ```
 
 Then open:
-- `http://127.0.0.1:8000/` (static UI)
-- `http://127.0.0.1:8000/docs` (OpenAPI docs)
+- `http://127.0.0.1:8000/` — login + balances
+- `http://127.0.0.1:8000/admin` — user management (admin only)
+- `http://127.0.0.1:8000/docs` — OpenAPI docs
+
+## First Start
+On first startup (no `expenses.db`), an admin user is created automatically:
+
+| Field    | Value      |
+|----------|------------|
+| Username | `admin`    |
+| Password | `changeme` |
+
+Change this password via the admin screen after first login.
 
 ## API Overview
 
+All endpoints except `POST /api/auth/login` require an active session cookie.
+
+### Auth
+- `POST /api/auth/login` — log in, sets session cookie
+- `POST /api/auth/logout` — log out, clears session cookie
+
 ### Users
-- `POST /api/users/` — create user
+- `POST /api/users/` — create user (**admin only**)
 - `GET /api/users/` — list users
-- `GET /api/users/{user_id}` — get user
+- `GET /api/users/me` — current user
+- `GET /api/users/{user_id}` — get user (admin or self)
+- `PATCH /api/users/{user_id}` — update name/password (admin or self), update `is_admin` (**admin only**)
+- `DELETE /api/users/{user_id}` — delete user (**admin only**, cannot delete self or last admin)
 
 ### Expenses
 - `POST /api/expenses/` — create expense
-- `GET /api/expenses/` — list expenses
+- `GET /api/expenses/` — list expenses (admin sees all, others see own)
 - `GET /api/expenses/{expense_id}` — get expense
 - `PATCH /api/expenses/{expense_id}` — update expense
 - `DELETE /api/expenses/{expense_id}` — delete expense
@@ -84,14 +107,16 @@ Shares must:
 ```
 
 ## Tests
-Install dependencies
+Install dependencies:
 ```powershell
 pip install -e .[dev]
 ```
 
+Run:
 ```powershell
 pytest -q
 ```
 
 ## Notes
 - Balances are net totals per user, not explicit "who pays who" settlements.
+- Sessions roll forward on each authenticated request (30-day TTL).

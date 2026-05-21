@@ -14,12 +14,17 @@ router = APIRouter()
     status_code=status.HTTP_201_CREATED,
     responses={409: {"description": "User name already exists"}},
 )
-def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    has_admin = db.query(models.User).filter(models.User.is_admin == True).first() is not None
+def create_user(
+    user: schemas.UserCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    if not current_user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin required")
     db_user = models.User(
         name=user.name,
         password_hash=hash_password(user.password),
-        is_admin=not has_admin,
+        is_admin=False,
     )
     db.add(db_user)
     try:
@@ -41,6 +46,7 @@ def list_users(
 ):
     return db.query(models.User).all()
 
+
 @router.get("/me", response_model=schemas.UserRead)
 def get_me(current_user: models.User = Depends(get_current_user)):
     return current_user
@@ -57,14 +63,15 @@ def get_me(current_user: models.User = Depends(get_current_user)):
 def get_user(
     user_id: int,
     db: Session = Depends(get_db),
-    _current_user: models.User = Depends(get_current_user),
+    current_user: models.User = Depends(get_current_user),
 ):
-    if not _current_user.is_admin and _current_user.id != user_id:
+    if not current_user.is_admin and current_user.id != user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return user
+
 
 @router.patch(
     "/{user_id}",
@@ -72,20 +79,39 @@ def get_user(
     responses={
         403: {"description": "Forbidden"},
         404: {"description": "User not found"},
+        409: {"description": "User name already exists"},
     },
 )
-def rename_user(
+def update_user(
     user_id: int,
-    new_username: str,
+    payload: schemas.UserUpdate,
     db: Session = Depends(get_db),
-    _current_user: models.User = Depends(get_current_user),
+    current_user: models.User = Depends(get_current_user),
 ):
-    if not _current_user.is_admin and _current_user.id != user_id:
+    if not current_user.is_admin and current_user.id != user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    user.name = new_username
+
+    if payload.is_admin is not None:
+        if not current_user.is_admin:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin required")
+        if payload.is_admin is False and user.is_admin:
+            admin_count = db.query(models.User).filter(models.User.is_admin == True).count()
+            if admin_count <= 1:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Cannot remove the last admin",
+                )
+        user.is_admin = payload.is_admin
+
+    if payload.name is not None:
+        user.name = payload.name
+
+    if payload.password is not None:
+        user.password_hash = hash_password(payload.password)
+
     try:
         db.commit()
     except IntegrityError:
@@ -109,13 +135,22 @@ def rename_user(
 def delete_user(
     user_id: int,
     db: Session = Depends(get_db),
-    _current_user: models.User = Depends(get_current_user),
+    current_user: models.User = Depends(get_current_user),
 ):
-    if not _current_user.is_admin and _current_user.id != user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+    if not current_user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin required")
+    if current_user.id == user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot delete yourself")
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if user.is_admin:
+        admin_count = db.query(models.User).filter(models.User.is_admin == True).count()
+        if admin_count <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cannot delete the last admin",
+            )
     db.query(models.ExpenseShare).filter(models.ExpenseShare.user_id == user_id).delete()
     db.delete(user)
     db.commit()
