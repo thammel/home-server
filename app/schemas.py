@@ -6,11 +6,13 @@ from typing import List
 
 class UserCreate(BaseModel):
     name: str
+    password: str
 
 
 class UserRead(BaseModel):
     id: int
     name: str
+    is_admin: bool
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -64,3 +66,8 @@ class BalanceRead(BaseModel):
     user_id: int
     name: str
     balance: float
+
+
+class LoginRequest(BaseModel):
+    name: str
+    password: str

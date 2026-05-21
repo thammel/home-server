@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -7,15 +7,28 @@
 </head>
 <body>
 
-<h1>🏠 Flat Expenses</h1>
+<h1>Flat Expenses</h1>
 
-<section>
-    <h2>Balances</h2>
-    <ul id="balances"></ul>
+<section id="login-section">
+    <h2>Login</h2>
+    <form id="login-form">
+        <input id="login-name" placeholder="Name" autocomplete="username" required>
+        <input id="login-password" type="password" placeholder="Password" autocomplete="current-password" required>
+        <button type="submit">Login</button>
+    </form>
+    <p id="login-error"></p>
 </section>
 
-<section>
-    <button onclick="location.href='/expenses'">Add New Expense</button>
+<section id="app-section" style="display:none">
+    <div>
+        <button id="logout-btn" type="button">Logout</button>
+    </div>
+    <h2>Balances</h2>
+    <ul id="balances"></ul>
+
+    <div>
+        <button onclick="location.href='/expenses'">Add New Expense</button>
+    </div>
 </section>
 
 <script type="module" src="/static/js/app.js"></script>
