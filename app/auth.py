@@ -31,7 +31,7 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 
 def create_session(db: Session, user: models.User) -> models.UserSession:
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.utcnow()
     expires_at = now + datetime.timedelta(days=SESSION_TTL_DAYS)
     session = models.UserSession(
         session_id=secrets.token_urlsafe(32),
@@ -62,14 +62,14 @@ def get_current_user(
     if not session:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session")
 
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.utcnow()
     if session.expires_at < now:
         db.delete(session)
         db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired")
 
     # Rolling session: extend expiry and refresh cookie.
-    session.expires_at = now + datetime.timedelta(days=SESSION_TTL_DAYS)
+    session.expires_at = datetime.datetime.utcnow() + datetime.timedelta(days=SESSION_TTL_DAYS)
     db.commit()
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
