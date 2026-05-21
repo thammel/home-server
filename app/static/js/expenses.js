@@ -2,13 +2,21 @@ import { api, redirectToLogin } from "./api.js";
 
 async function renderUserShareFields() {
     const container = document.getElementById('shares-container');
+    const paidBySelect = document.getElementById('paid-by');
     container.innerHTML = 'Loading users...';
 
     try {
         const users = await api.getUsers();
 
         container.innerHTML = '';
+        paidBySelect.innerHTML = '';
+
         users.forEach(u => {
+            const opt = document.createElement('option');
+            opt.value = u.id;
+            opt.textContent = u.name;
+            paidBySelect.appendChild(opt);
+
             const row = document.createElement('div');
             row.className = 'share-row';
             row.style.marginBottom = '6px';
@@ -24,6 +32,7 @@ async function renderUserShareFields() {
             input.name = `share-${u.id}`;
             input.dataset.userId = u.id;
             input.min = 0;
+            input.step = '0.01';
             input.value = 0;
 
             row.appendChild(label);
@@ -56,14 +65,17 @@ async function addExpense() {
     const paidById = parseInt(document.getElementById("paid-by").value);
     const shareInputs = document.querySelectorAll('#shares-container input');
 
-    const shares = Array.from(shareInputs).map(s => {
-    const id = parseInt(s.dataset.userId);
-    const value = parseFloat(s.value) || 0;
-    return {
-        user_id: id,
-        share: id === paidById ? -value : value
-    };
-});
+    const shares = [];
+    shareInputs.forEach(s => {
+        const id = parseInt(s.dataset.userId);
+        const value = parseFloat(s.value) || 0;
+        if (id === paidById) {
+            shares.push({ user_id: id, share: -cost });
+            if (value > 0) shares.push({ user_id: id, share: value });
+        } else {
+            if (value > 0) shares.push({ user_id: id, share: value });
+        }
+    });
 
     if (!cost || isNaN(cost) || cost <= 0) {
         alert("Cost must be a positive number.");
@@ -103,10 +115,26 @@ async function addExpense() {
     window.location.href = "/";
 }
 
+function splitEqually() {
+    const cost = parseFloat(document.getElementById("cost").value);
+    if (!cost || isNaN(cost) || cost <= 0) {
+        alert("Enter cost first.");
+        return;
+    }
+    const inputs = document.querySelectorAll('#shares-container input');
+    if (inputs.length === 0) return;
+    const share = Math.round(cost / inputs.length * 100) / 100;
+    const remainder = Math.round((cost - share * inputs.length) * 100) / 100;
+    inputs.forEach((input, i) => {
+        input.value = i === 0 ? (share + remainder).toFixed(2) : share.toFixed(2);
+    });
+}
+
 window.onload = async () => {
     const submitBtn = document.getElementById("add-expense-btn");
     if (submitBtn) submitBtn.disabled = true;
     await renderUserShareFields();
     if (submitBtn) submitBtn.disabled = false;
     window.addExpense = addExpense;
+    window.splitEqually = splitEqually;
 };
