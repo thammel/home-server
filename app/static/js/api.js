@@ -61,6 +61,26 @@ export const api = {
         });
     },
 
+    createUser(payload) {
+        return request("/api/users/", {
+            method: "POST",
+            body: JSON.stringify(payload)
+        });
+    },
+
+    updateUser(userId, payload) {
+        return request(`/api/users/${userId}`, {
+            method: "PATCH",
+            body: JSON.stringify(payload)
+        });
+    },
+
+    deleteUser(userId) {
+        return request(`/api/users/${userId}`, {
+            method: "DELETE"
+        });
+    },
+
     login(payload) {
         return request("/api/auth/login", {
             method: "POST",

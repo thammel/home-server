@@ -68,6 +68,12 @@ class BalanceRead(BaseModel):
     balance: float
 
 
+class UserUpdate(BaseModel):
+    name: str | None = None
+    is_admin: bool | None = None
+    password: str | None = None
+
+
 class LoginRequest(BaseModel):
     name: str
     password: str

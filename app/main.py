@@ -1,11 +1,29 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from app.database import engine
+from app.database import engine, SessionLocal
 from app import models
+from app.auth import hash_password
 from app.routers.api import users, expenses, balances, auth
 
 models.Base.metadata.create_all(bind=engine)
+
+
+def _seed_admin():
+    db = SessionLocal()
+    try:
+        if not db.query(models.User).first():
+            db.add(models.User(
+                name="admin",
+                password_hash=hash_password("changeme"),
+                is_admin=True,
+            ))
+            db.commit()
+    finally:
+        db.close()
+
+
+_seed_admin()
 
 app = FastAPI(title="Flat Expenses")
 
@@ -34,3 +52,8 @@ def expenses_page():
 @app.get("/expenses/{expense_id}")
 def expense_page(expense_id: int):
     return FileResponse("app/static/expense.html")
+
+
+@app.get("/admin")
+def admin_page():
+    return FileResponse("app/static/admin.html")
