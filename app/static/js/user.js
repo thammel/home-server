@@ -1,14 +1,38 @@
-import {api} from "./api.js";
+import { api, redirectToLogin } from "./api.js";
 
 const userId = parseInt(window.location.pathname.split("/").pop());
 
 window.onload = async () => {
-    const users = await api.getUsers();
-    const balances = await api.getBalances();
-    const expenses = await api.getExpenses();
+    let currentUser;
+    let balances;
+    let expenses;
+    try {
+        currentUser = await api.getMe();
+        balances = await api.getBalances();
+        expenses = await api.getExpenses();
+    } catch (err) {
+        if (err.status === 401) {
+            redirectToLogin();
+            return;
+        }
+        if (err.status === 403) {
+            document.getElementById("username").textContent = "Not authorized";
+            return;
+        }
+        throw err;
+    }
 
-    const user = users.find(u => u.id === userId);
-    const balance = balances.find(b => b.user_id === userId);
+    if (!currentUser.is_admin && userId !== currentUser.id) {
+        window.location.href = `/users/${currentUser.id}`;
+        return;
+    }
+
+    let user = currentUser;
+    if (currentUser.is_admin && userId !== currentUser.id) {
+        user = await api.getUser(userId);
+    }
+
+    const balance = balances.find(b => b.user_id === user.id);
 
     document.getElementById("username").textContent = user.name;
     document.getElementById("balance").textContent =
@@ -34,12 +58,12 @@ window.onload = async () => {
         const cost = Number(e.cost);
         const comment = e.comment || "";
 
-        const shareAmount = e.shares.find(s => s.user_id === userId)?.share || 0;
+        const shareAmount = e.shares.find(s => s.user_id === user.id)?.share || 0;
         const shareText = shareAmount > 0 ? ` (Share: ${shareAmount}€)` : ` (Share: ${-shareAmount}€)`;
 
-        li.textContent = `${date.toLocaleDateString()} - ${description} [${category}]`;
-        li.textContent += comment ? ` - ${comment}` : "";
-        li.textContent += ` - ${cost}€${shareText}`;
+        const text = `${date.toLocaleDateString()} - ${description} [${category}]`
+            + (comment ? ` - ${comment}` : "")
+            + ` - ${cost}€${shareText}`;
 
         if (shareAmount < 0) {
             li.style.color = "green";
@@ -49,8 +73,11 @@ window.onload = async () => {
             li.style.color = "black";
         }
 
-        const link = `/expenses/${e.id}/?next=/users/${userId}`;
-        li.innerHTML = `<a href="${link}">${li.textContent}</a>`;
+        const link = `/expenses/${e.id}/?next=/users/${user.id}`;
+        const a = document.createElement("a");
+        a.href = link;
+        a.textContent = text;
+        li.appendChild(a);
 
         expenses_list.appendChild(li);
     }
