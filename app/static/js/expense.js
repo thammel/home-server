@@ -1,4 +1,4 @@
-import { api } from "./api.js";
+import { api, redirectToLogin } from "./api.js";
 
 const expenseId = parseInt(window.location.pathname.split("/").pop());
 
@@ -8,7 +8,20 @@ window.onload = async () => {
     const backLink = document.getElementById("back-link");
     if (backLink) backLink.href = next;
 
-    const expense = await api.getExpense(expenseId);
+    let expense;
+    try {
+        expense = await api.getExpense(expenseId);
+    } catch (err) {
+        if (err.status === 401) {
+            redirectToLogin();
+            return;
+        }
+        if (err.status === 403) {
+            document.getElementById("expense-title").textContent = "Not authorized";
+            return;
+        }
+        throw err;
+    }
 
     document.getElementById("expense-date").textContent = new Date(expense.date).toLocaleDateString();
     document.getElementById("expense-description").textContent = expense.description;
