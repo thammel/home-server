@@ -2,21 +2,16 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.database import SessionLocal
+from app.auth import get_current_user, get_db
 
 router = APIRouter()
 
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
 @router.get("/", response_model=list[schemas.BalanceRead])
-def get_balances(db: Session = Depends(get_db)):
+def get_balances(
+    db: Session = Depends(get_db),
+    _current_user: models.User = Depends(get_current_user),
+):
     users = db.query(models.User).all()
     balances = {u.id: {u1.id: 0.0 for u1 in users if u1.id != u.id} for u in users}
 
@@ -39,7 +34,7 @@ def get_balances(db: Session = Depends(get_db)):
                 balances[debtor.user_id][payer.user_id] -= portion
                 balances[payer.user_id][debtor.user_id] += portion
 
-    return [
+    all_balances = [
         schemas.BalanceRead(
             user_id=u.id,
             name=u.name,
@@ -47,3 +42,4 @@ def get_balances(db: Session = Depends(get_db)):
         )
         for u in users
     ]
+    return all_balances

@@ -1,4 +1,4 @@
-# HomeServer — Flat Expenses
+﻿# HomeServer - Flat Expenses
 
 Small FastAPI app to track shared expenses and compute balances between users.
 
@@ -94,4 +94,4 @@ pytest -q
 ```
 
 ## Notes
-- Balances are net totals per user, not explicit “who pays who” settlements.
+- Balances are net totals per user, not explicit "who pays who" settlements.
