@@ -24,6 +24,10 @@ async function request(path, options = {}) {
     return res.status !== 204 ? res.json() : null;
 }
 
+export function fmt(n) {
+    return (+n).toFixed(2);
+}
+
 export function redirectToLogin() {
     const next = window.location.pathname + window.location.search;
     window.location.href = `/?next=${encodeURIComponent(next)}`;

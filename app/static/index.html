@@ -2,36 +2,43 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Flat Expenses</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
+<main class="container">
 
 <h1>Flat Expenses</h1>
 
 <section id="login-section">
-    <h2>Login</h2>
-    <form id="login-form">
-        <input id="login-name" placeholder="Name" autocomplete="username" required>
-        <input id="login-password" type="password" placeholder="Password" autocomplete="current-password" required>
-        <button type="submit">Login</button>
-    </form>
-    <p id="login-error"></p>
+    <article>
+        <h2>Login</h2>
+        <form id="login-form">
+            <input id="login-name" placeholder="Name" autocomplete="username" required>
+            <input id="login-password" type="password" placeholder="Password" autocomplete="current-password" required>
+            <button type="submit">Login</button>
+        </form>
+        <p id="login-error" class="error"></p>
+    </article>
 </section>
 
 <section id="app-section" style="display:none">
-    <div>
-        <button id="logout-btn" type="button">Logout</button>
-        <button id="admin-btn" type="button" style="display:none" onclick="location.href='/admin'">Admin</button>
-    </div>
+    <nav>
+        <ul></ul>
+        <ul>
+            <li><button id="admin-btn" type="button" style="display:none" onclick="location.href='/admin'">Admin</button></li>
+            <li><button id="logout-btn" type="button" class="secondary">Logout</button></li>
+        </ul>
+    </nav>
     <h2>Balances</h2>
     <ul id="balances"></ul>
 
-    <div>
-        <button onclick="location.href='/expenses'">Add New Expense</button>
-    </div>
+    <button onclick="location.href='/expenses'">Add New Expense</button>
 </section>
 
+</main>
 <script type="module" src="/static/js/app.js"></script>
 </body>
 </html>

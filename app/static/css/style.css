@@ -1,18 +1,3 @@
-body {
-    font-family: Arial, sans-serif;
-    max-width: 600px;
-    margin: auto;
-}
-
-section {
-    margin-bottom: 2rem;
-}
-
-input, select, button {
-    margin: 0.3rem 0;
-    display: block;
-}
-
-#login-error {
-    color: #b00020;
+.error {
+    color: var(--pico-color-red-500);
 }
