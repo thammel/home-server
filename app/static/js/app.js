@@ -1,4 +1,4 @@
-import { api } from "./api.js";
+import { api, fmt } from "./api.js";
 
 window.onload = () => {
     init();
@@ -64,8 +64,8 @@ async function loadBalances() {
         const a = document.createElement("a");
         a.href = `/users/${b.user_id}`;
         a.textContent = b.balance >= 0
-            ? `${b.name} is owed €${b.balance}`
-            : `${b.name} owes €${-b.balance}`;
+            ? `${b.name} is owed €${fmt(b.balance)}`
+            : `${b.name} owes €${fmt(-b.balance)}`;
         li.appendChild(a);
         ul.appendChild(li);
     });

@@ -2,26 +2,31 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>User Details</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
+<main class="container">
 
-<a href="/">← Back</a>
+<nav>
+    <ul><li><a href="/">← Back</a></li></ul>
+</nav>
 
 <h1 id="username"></h1>
 
-<section>
+<article>
     <h2>Balance</h2>
     <p id="balance"></p>
-</section>
+</article>
 
 <section>
     <h2>Expenses</h2>
     <ul id="expenses"></ul>
 </section>
 
-
+</main>
 <script type="module" src="/static/js/user.js"></script>
 </body>
 </html>

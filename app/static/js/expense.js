@@ -1,4 +1,4 @@
-import { api, redirectToLogin } from "./api.js";
+import { api, redirectToLogin, fmt } from "./api.js";
 
 const expenseId = parseInt(window.location.pathname.split("/").pop());
 
@@ -26,7 +26,7 @@ window.onload = async () => {
     document.getElementById("expense-date").textContent = new Date(expense.date).toLocaleDateString();
     document.getElementById("expense-description").textContent = expense.description;
     document.getElementById("expense-category").textContent = expense.category;
-    document.getElementById("expense-cost").textContent = `${expense.cost} ${expense.currency}`;
+    document.getElementById("expense-cost").textContent = `${fmt(expense.cost)} ${expense.currency}`;
     document.getElementById("expense-comment").textContent = expense.comment || "";
 
     const sharesList = document.getElementById("expense-shares");
@@ -34,7 +34,7 @@ window.onload = async () => {
 
     expense.shares.forEach(s => {
         const li = document.createElement("li");
-        li.textContent = `User ID: ${s.user_id}, Share: ${s.share} ${expense.currency}`;
+        li.textContent = `User ID: ${s.user_id}, Share: ${fmt(s.share)} ${expense.currency}`;
         sharesList.appendChild(li);
     });
 };

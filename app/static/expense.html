@@ -2,24 +2,31 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Expense Details</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-<a id="back-link" href="/">← Back</a>
+<main class="container">
+
+<nav>
+    <ul><li><a id="back-link" href="/">← Back</a></li></ul>
+</nav>
 
 <h1 id="expense-title">Expense Details</h1>
-<section>
-    <h2>Details</h2>
+<article>
     <p id="expense-date"></p>
     <p id="expense-description"></p>
     <p id="expense-category"></p>
     <p id="expense-cost"></p>
     <p id="expense-currency"></p>
     <p id="expense-comment"></p>
+    <hr>
     <p id="expense-shares"></p>
-</section>
+</article>
 
+</main>
 <script type="module" src="/static/js/expense.js"></script>
 </body>
 </html>
