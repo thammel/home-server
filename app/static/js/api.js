@@ -121,5 +121,9 @@ export const api = {
         return request("/api/auth/logout", {
             method: "POST"
         });
+    },
+
+    getCategories() {
+        return request("/api/expenses/categories");
     }
 };
