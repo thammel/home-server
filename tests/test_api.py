@@ -290,6 +290,45 @@ def test_balances_with_multiple_payers(client: TestClient):
     assert balances_data["Carol"] == -30.0
 
 
+def test_get_categories_admin_sees_all(client: TestClient):
+    alice_id = create_user(client, "Alice")
+    bob_id = create_user(client, "Bob")
+
+    for cat, payer, consumer in [("Food", alice_id, bob_id), ("House", bob_id, alice_id), ("Food", alice_id, bob_id)]:
+        client.post("/api/expenses/", json={
+            "date": "2026-01-01", "description": "x", "category": cat,
+            "cost": 10.0, "currency": "EUR", "comment": None,
+            "shares": [{"user_id": payer, "share": -10.0}, {"user_id": consumer, "share": 10.0}],
+        })
+
+    res = client.get("/api/expenses/categories")
+    assert res.status_code == 200
+    assert res.json() == ["Food", "House"]
+
+
+def test_get_categories_non_admin_sees_own(non_admin_client: TestClient):
+    me_id = non_admin_client.get("/api/users/me").json()["id"]
+    all_users = non_admin_client.get("/api/users/").json()
+    admin_id = next(u["id"] for u in all_users if u["id"] != me_id)
+
+    # expense involving me → should appear in categories
+    non_admin_client.post("/api/expenses/", json={
+        "date": "2026-01-01", "description": "shared", "category": "Food",
+        "cost": 20.0, "currency": "EUR", "comment": None,
+        "shares": [{"user_id": admin_id, "share": -20.0}, {"user_id": me_id, "share": 20.0}],
+    })
+    # expense NOT involving me → should not appear
+    non_admin_client.post("/api/expenses/", json={
+        "date": "2026-01-01", "description": "admin only", "category": "Travel",
+        "cost": 10.0, "currency": "EUR", "comment": None,
+        "shares": [{"user_id": admin_id, "share": -10.0}, {"user_id": admin_id, "share": 10.0}],
+    })
+
+    res = non_admin_client.get("/api/expenses/categories")
+    assert res.status_code == 200
+    assert res.json() == ["Food"]
+
+
 def test_balances_pizza_cash_split(client: TestClient):
     p1_id = create_user(client, "Person 1")
     p2_id = create_user(client, "Person 2")

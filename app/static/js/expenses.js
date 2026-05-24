@@ -159,6 +159,15 @@ window.onload = async () => {
     const submitBtn = document.getElementById("add-expense-btn");
     if (submitBtn) submitBtn.disabled = true;
     await renderUserShareFields();
+    try {
+        const categories = await api.getCategories();
+        const dl = document.getElementById("category-list");
+        categories.forEach(c => {
+            const opt = document.createElement("option");
+            opt.value = c;
+            dl.appendChild(opt);
+        });
+    } catch (_) {}
     if (submitBtn) submitBtn.disabled = false;
     window.addExpense = addExpense;
     window.splitEqually = splitEqually;
