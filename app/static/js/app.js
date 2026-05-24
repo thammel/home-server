@@ -106,18 +106,20 @@ function renderPersonalSettlements(container, userSettlements, myId) {
 
     for (const s of toPay) {
         const tr = document.createElement("tr");
-        tr.style.color = "var(--pico-color-red-500)";
         const nameTd = Object.assign(document.createElement("td"), { textContent: s.to_name });
+        nameTd.style.color = "var(--pico-color-red-500)";
         const amountTd = Object.assign(document.createElement("td"), { textContent: `−€${fmt(s.amount)}` });
+        amountTd.style.color = "var(--pico-color-red-500)";
         amountTd.style.textAlign = "right";
         tr.append(nameTd, amountTd);
         tbody.appendChild(tr);
     }
     for (const s of toReceive) {
         const tr = document.createElement("tr");
-        tr.style.color = "var(--pico-color-green-500)";
         const nameTd = Object.assign(document.createElement("td"), { textContent: s.from_name });
+        nameTd.style.color = "var(--pico-color-green-500)";
         const amountTd = Object.assign(document.createElement("td"), { textContent: `+€${fmt(s.amount)}` });
+        amountTd.style.color = "var(--pico-color-green-500)";
         amountTd.style.textAlign = "right";
         tr.append(nameTd, amountTd);
         tbody.appendChild(tr);
@@ -148,18 +150,20 @@ function renderAdminSettlements(container, settlements, myId) {
             href: `/users/${s.to_user_id}`, textContent: s.to_name, className: "plain-link"
         });
 
-        const tr = document.createElement("tr");
-        if (fromIsMe) tr.style.color = "var(--pico-color-red-500)";
-        else if (toIsMe) tr.style.color = "var(--pico-color-green-500)";
+        const rowColor = fromIsMe ? "var(--pico-color-red-500)" : toIsMe ? "var(--pico-color-green-500)" : null;
 
         const fromTd = document.createElement("td");
         fromTd.appendChild(fromEl);
+        if (rowColor) fromTd.style.color = rowColor;
         const paysTd = Object.assign(document.createElement("td"), { textContent: "pays" });
         paysTd.style.color = "var(--pico-muted-color)";
         const toTd = document.createElement("td");
         toTd.appendChild(toEl);
+        if (rowColor) toTd.style.color = rowColor;
         const amountTd = Object.assign(document.createElement("td"), { textContent: `€${fmt(s.amount)}` });
+        if (rowColor) amountTd.style.color = rowColor;
         amountTd.style.textAlign = "right";
+        const tr = document.createElement("tr");
 
         tr.append(fromTd, paysTd, toTd, amountTd);
         tbody.appendChild(tr);

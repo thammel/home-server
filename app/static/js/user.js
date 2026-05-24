@@ -177,11 +177,12 @@ function buildSettlementTable(rows, color) {
     const tbody = document.createElement("tbody");
     for (const { label, amount } of rows) {
         const tr = document.createElement("tr");
-        tr.style.color = color;
         const labelTd = document.createElement("td");
         labelTd.textContent = label;
+        labelTd.style.color = color;
         const amountTd = document.createElement("td");
         amountTd.textContent = `€${fmt(amount)}`;
+        amountTd.style.color = color;
         amountTd.style.textAlign = "right";
         tr.append(labelTd, amountTd);
         tbody.appendChild(tr);
