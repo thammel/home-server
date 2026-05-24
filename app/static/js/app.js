@@ -84,9 +84,11 @@ function renderPersonalSettlements(container, userSettlements, myId) {
 
     const summary = document.createElement("p");
     summary.style.fontWeight = "bold";
-    summary.style.fontSize = "1.1rem";
+    summary.style.marginBottom = "0.5rem";
     if (Math.abs(net) < 0.005) {
         summary.textContent = "All settled up.";
+        container.appendChild(summary);
+        return;
     } else if (net > 0) {
         summary.style.color = "var(--pico-color-green-500)";
         summary.textContent = `You are owed €${fmt(net)} net`;
@@ -96,47 +98,33 @@ function renderPersonalSettlements(container, userSettlements, myId) {
     }
     container.appendChild(summary);
 
-    if (toPay.length > 0) {
-        const h = document.createElement("h4");
-        h.textContent = "You need to pay";
-        h.style.marginTop = "1rem";
-        container.appendChild(h);
-        container.appendChild(buildSettlementTable(
-            toPay.map(s => ({ label: `→ ${s.to_name}`, amount: s.amount })),
-            "var(--pico-color-red-500)"
-        ));
-    }
-
-    if (toReceive.length > 0) {
-        const h = document.createElement("h4");
-        h.textContent = "Coming to you";
-        h.style.marginTop = "1rem";
-        container.appendChild(h);
-        container.appendChild(buildSettlementTable(
-            toReceive.map(s => ({ label: `← ${s.from_name}`, amount: s.amount })),
-            "var(--pico-color-green-500)"
-        ));
-    }
-}
-
-function buildSettlementTable(rows, color) {
+    // compact flat list: payers first (red), then receivers (green)
     const table = document.createElement("table");
     table.className = "borderless";
-    table.style.cssText = "width:auto;min-width:16rem;margin:0 auto;";
+    table.style.cssText = "width:auto;min-width:12rem;";
     const tbody = document.createElement("tbody");
-    for (const { label, amount } of rows) {
+
+    for (const s of toPay) {
         const tr = document.createElement("tr");
-        tr.style.color = color;
-        const labelTd = document.createElement("td");
-        labelTd.textContent = label;
-        const amountTd = document.createElement("td");
-        amountTd.textContent = `€${fmt(amount)}`;
+        tr.style.color = "var(--pico-color-red-500)";
+        const nameTd = Object.assign(document.createElement("td"), { textContent: s.to_name });
+        const amountTd = Object.assign(document.createElement("td"), { textContent: `−€${fmt(s.amount)}` });
         amountTd.style.textAlign = "right";
-        tr.append(labelTd, amountTd);
+        tr.append(nameTd, amountTd);
         tbody.appendChild(tr);
     }
+    for (const s of toReceive) {
+        const tr = document.createElement("tr");
+        tr.style.color = "var(--pico-color-green-500)";
+        const nameTd = Object.assign(document.createElement("td"), { textContent: s.from_name });
+        const amountTd = Object.assign(document.createElement("td"), { textContent: `+€${fmt(s.amount)}` });
+        amountTd.style.textAlign = "right";
+        tr.append(nameTd, amountTd);
+        tbody.appendChild(tr);
+    }
+
     table.appendChild(tbody);
-    return table;
+    container.appendChild(table);
 }
 
 function renderAdminSettlements(container, settlements, myId) {
