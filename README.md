@@ -10,6 +10,9 @@ Small FastAPI app to track shared expenses and compute balances between users.
 - SQLite storage via SQLAlchemy
 - Simple static frontend pages
 - Admin screen for user management
+- Per-user stats: monthly expense bar chart grouped by category
+- Category autocomplete on expense forms (based on previously used categories)
+- Personal settlements view: net summary + "you need to pay / coming to you" sections
 
 ## Tech
 - Python 3.13
@@ -34,7 +37,9 @@ uvicorn app.main:app --reload
 ```
 
 Then open:
-- `http://127.0.0.1:8000/` — login + balances
+- `http://127.0.0.1:8000/` — login + settlements overview
+- `http://127.0.0.1:8000/expenses` — add expense
+- `http://127.0.0.1:8000/users/{id}` — user profile (Overview + Stats tabs)
 - `http://127.0.0.1:8000/admin` — user management (admin only)
 - `http://127.0.0.1:8000/docs` — OpenAPI docs
 
@@ -67,12 +72,14 @@ All endpoints except `POST /api/auth/login` require an active session cookie.
 ### Expenses
 - `POST /api/expenses/` — create expense
 - `GET /api/expenses/` — list expenses (admin sees all, others see own)
+- `GET /api/expenses/categories` — distinct category strings (admin sees all, others see own)
 - `GET /api/expenses/{expense_id}` — get expense
 - `PATCH /api/expenses/{expense_id}` — update expense
 - `DELETE /api/expenses/{expense_id}` — delete expense
 
 ### Balances
 - `GET /api/balances/` — net balance per user
+- `GET /api/balances/settlements/?mode=simplified|full` — settlement instructions
 
 ## Expense Model
 An expense contains a list of shares. Shares use signed values:

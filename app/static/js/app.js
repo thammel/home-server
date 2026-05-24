@@ -62,9 +62,85 @@ async function loadSettlements(myId, isAdmin) {
     const container = document.getElementById("settlements-list");
     container.innerHTML = "";
 
-    const visible = isAdmin ? settlements : settlements.filter(s => s.from_user_id === myId || s.to_user_id === myId);
+    if (isAdmin) {
+        renderAdminSettlements(container, settlements, myId);
+    } else {
+        const mine = settlements.filter(s => s.from_user_id === myId || s.to_user_id === myId);
+        renderPersonalSettlements(container, mine, myId);
+    }
+}
 
-    if (visible.length === 0) {
+function renderPersonalSettlements(container, userSettlements, myId) {
+    if (userSettlements.length === 0) {
+        container.textContent = "All settled up.";
+        return;
+    }
+
+    const toPay = userSettlements.filter(s => s.from_user_id === myId);
+    const toReceive = userSettlements.filter(s => s.to_user_id === myId);
+    const totalOwed = toPay.reduce((sum, s) => sum + s.amount, 0);
+    const totalReceive = toReceive.reduce((sum, s) => sum + s.amount, 0);
+    const net = totalReceive - totalOwed;
+
+    const summary = document.createElement("p");
+    summary.style.fontWeight = "bold";
+    summary.style.fontSize = "1.1rem";
+    if (Math.abs(net) < 0.005) {
+        summary.textContent = "All settled up.";
+    } else if (net > 0) {
+        summary.style.color = "var(--pico-color-green-500)";
+        summary.textContent = `You are owed €${fmt(net)} net`;
+    } else {
+        summary.style.color = "var(--pico-color-red-500)";
+        summary.textContent = `You owe €${fmt(-net)} net`;
+    }
+    container.appendChild(summary);
+
+    if (toPay.length > 0) {
+        const h = document.createElement("h4");
+        h.textContent = "You need to pay";
+        h.style.marginTop = "1rem";
+        container.appendChild(h);
+        container.appendChild(buildSettlementTable(
+            toPay.map(s => ({ label: `→ ${s.to_name}`, amount: s.amount })),
+            "var(--pico-color-red-500)"
+        ));
+    }
+
+    if (toReceive.length > 0) {
+        const h = document.createElement("h4");
+        h.textContent = "Coming to you";
+        h.style.marginTop = "1rem";
+        container.appendChild(h);
+        container.appendChild(buildSettlementTable(
+            toReceive.map(s => ({ label: `← ${s.from_name}`, amount: s.amount })),
+            "var(--pico-color-green-500)"
+        ));
+    }
+}
+
+function buildSettlementTable(rows, color) {
+    const table = document.createElement("table");
+    table.className = "borderless";
+    table.style.cssText = "width:auto;min-width:16rem;margin:0 auto;";
+    const tbody = document.createElement("tbody");
+    for (const { label, amount } of rows) {
+        const tr = document.createElement("tr");
+        tr.style.color = color;
+        const labelTd = document.createElement("td");
+        labelTd.textContent = label;
+        const amountTd = document.createElement("td");
+        amountTd.textContent = `€${fmt(amount)}`;
+        amountTd.style.textAlign = "right";
+        tr.append(labelTd, amountTd);
+        tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    return table;
+}
+
+function renderAdminSettlements(container, settlements, myId) {
+    if (settlements.length === 0) {
         container.textContent = "All settled up.";
         return;
     }
@@ -73,34 +149,28 @@ async function loadSettlements(myId, isAdmin) {
     table.className = "borderless";
     const tbody = document.createElement("tbody");
 
-    for (const s of visible) {
+    for (const s of settlements) {
         const fromIsMe = s.from_user_id === myId;
         const toIsMe = s.to_user_id === myId;
 
-        const fromEl = (fromIsMe || isAdmin)
-            ? Object.assign(document.createElement("a"), { href: `/users/${s.from_user_id}`, textContent: s.from_name, className: "plain-link" })
-            : Object.assign(document.createElement("span"), { textContent: s.from_name });
-
-        const toEl = (toIsMe || isAdmin)
-            ? Object.assign(document.createElement("a"), { href: `/users/${s.to_user_id}`, textContent: s.to_name, className: "plain-link" })
-            : Object.assign(document.createElement("span"), { textContent: s.to_name });
+        const fromEl = Object.assign(document.createElement("a"), {
+            href: `/users/${s.from_user_id}`, textContent: s.from_name, className: "plain-link"
+        });
+        const toEl = Object.assign(document.createElement("a"), {
+            href: `/users/${s.to_user_id}`, textContent: s.to_name, className: "plain-link"
+        });
 
         const tr = document.createElement("tr");
         if (fromIsMe) tr.style.color = "var(--pico-color-red-500)";
-        if (toIsMe)   tr.style.color = "var(--pico-color-green-500)";
+        else if (toIsMe) tr.style.color = "var(--pico-color-green-500)";
 
         const fromTd = document.createElement("td");
         fromTd.appendChild(fromEl);
-
-        const paysTd = document.createElement("td");
-        paysTd.textContent = "pays";
+        const paysTd = Object.assign(document.createElement("td"), { textContent: "pays" });
         paysTd.style.color = "var(--pico-muted-color)";
-
         const toTd = document.createElement("td");
         toTd.appendChild(toEl);
-
-        const amountTd = document.createElement("td");
-        amountTd.textContent = `€${fmt(s.amount)}`;
+        const amountTd = Object.assign(document.createElement("td"), { textContent: `€${fmt(s.amount)}` });
         amountTd.style.textAlign = "right";
 
         tr.append(fromTd, paysTd, toTd, amountTd);
