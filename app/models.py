@@ -41,6 +41,13 @@ class ExpenseShare(Base):
     user = relationship("User")
 
 
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+
+    key = Column(String, primary_key=True)
+    value = Column(String, nullable=False)
+
+
 class UserSession(Base):
     __tablename__ = "user_sessions"
 
