@@ -8,12 +8,13 @@ window.onload = async () => {
     const backLink = document.getElementById("back-link");
     if (backLink) backLink.href = next;
 
-    let expense, users, me;
+    let expense, users, me, categories;
     try {
-        [expense, users, me] = await Promise.all([
+        [expense, users, me, categories] = await Promise.all([
             api.getExpense(expenseId),
             api.getUsers(),
-            api.getMe()
+            api.getMe(),
+            api.getCategories()
         ]);
     } catch (err) {
         if (err.status === 401) { redirectToLogin(); return; }
@@ -25,6 +26,15 @@ window.onload = async () => {
     }
 
     renderDetails(expense, users);
+
+    const dl = document.getElementById("category-list");
+    if (dl && categories) {
+        categories.forEach(c => {
+            const opt = document.createElement("option");
+            opt.value = c;
+            dl.appendChild(opt);
+        });
+    }
 
     const canEdit = me.is_admin || expense.shares.some(s => s.user_id === me.id && s.share < 0);
     if (canEdit) {
