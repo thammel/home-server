@@ -66,7 +66,7 @@ def update_expense(
     db_expense = db.query(models.Expense).filter(models.Expense.id == expense_id).first()
     if not db_expense:
         raise HTTPException(status_code=404, detail="Expense not found")
-    if not _current_user.is_admin and not any(s.user_id == _current_user.id for s in db_expense.shares):
+    if not _current_user.is_admin and not any(s.user_id == _current_user.id and s.share < 0 for s in db_expense.shares):
         raise HTTPException(status_code=403, detail="Forbidden")
 
     new_cost = expense.cost if expense.cost is not None else db_expense.cost
@@ -112,6 +112,18 @@ def list_expenses(
     return query.all()
 
 
+@router.get("/categories", response_model=list[str])
+def list_categories(
+    db: Session = Depends(get_db),
+    _current_user: models.User = Depends(get_current_user),
+):
+    query = db.query(models.Expense.category).distinct()
+    if not _current_user.is_admin:
+        query = query.join(models.ExpenseShare).filter(models.ExpenseShare.user_id == _current_user.id)
+    results = query.all()
+    return sorted(r[0] for r in results if r[0])
+
+
 @router.get("/{expense_id}", response_model=schemas.ExpenseRead, responses={404: {"description": "Expense not found"}})
 def get_expense(
     expense_id: int,
@@ -136,7 +148,7 @@ def delete_expense(
     expense = db.query(models.Expense).filter(models.Expense.id == expense_id).first()
     if not expense:
         raise HTTPException(status_code=404, detail="Expense not found")
-    if not _current_user.is_admin and not any(s.user_id == _current_user.id for s in expense.shares):
+    if not _current_user.is_admin and not any(s.user_id == _current_user.id and s.share < 0 for s in expense.shares):
         raise HTTPException(status_code=403, detail="Forbidden")
     db.delete(expense)
     db.commit()

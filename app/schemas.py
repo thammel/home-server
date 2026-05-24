@@ -77,3 +77,19 @@ class UserUpdate(BaseModel):
 class LoginRequest(BaseModel):
     name: str
     password: str
+
+
+class SettlementRead(BaseModel):
+    from_user_id: int
+    from_name: str
+    to_user_id: int
+    to_name: str
+    amount: float
+
+
+class SettingsRead(BaseModel):
+    settlement_mode: str
+
+
+class SettingsUpdate(BaseModel):
+    settlement_mode: str

@@ -22,6 +22,7 @@ async function init() {
 
     currentUserId = me.id;
     await loadUsers();
+    await loadSettings();
 
     document.getElementById("add-user-form").addEventListener("submit", async (e) => {
         e.preventDefault();
@@ -38,6 +39,25 @@ async function init() {
             errorEl.textContent = err.message || "Failed to create user.";
         }
     });
+}
+
+async function loadSettings() {
+    const settings = await api.getSettings();
+    applyModeButtons(settings.settlement_mode);
+
+    document.getElementById("mode-simplified").addEventListener("click", async () => {
+        await api.updateSettings({ settlement_mode: "simplified" });
+        applyModeButtons("simplified");
+    });
+    document.getElementById("mode-full").addEventListener("click", async () => {
+        await api.updateSettings({ settlement_mode: "full" });
+        applyModeButtons("full");
+    });
+}
+
+function applyModeButtons(mode) {
+    document.getElementById("mode-simplified").className = mode === "simplified" ? "" : "secondary";
+    document.getElementById("mode-full").className = mode === "full" ? "" : "secondary";
 }
 
 async function loadUsers() {

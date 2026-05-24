@@ -24,6 +24,10 @@ async function request(path, options = {}) {
     return res.status !== 204 ? res.json() : null;
 }
 
+export function fmt(n) {
+    return (+n).toFixed(2);
+}
+
 export function redirectToLogin() {
     const next = window.location.pathname + window.location.search;
     window.location.href = `/?next=${encodeURIComponent(next)}`;
@@ -54,10 +58,35 @@ export const api = {
         return request("/api/balances/");
     },
 
+    getSettlements(mode = "simplified") {
+        return request(`/api/balances/settlements/?mode=${mode}`);
+    },
+
+    getSettings() {
+        return request("/api/settings/");
+    },
+
+    updateSettings(payload) {
+        return request("/api/settings/", { method: "PATCH", body: JSON.stringify(payload) });
+    },
+
     addExpense(expense) {
         return request("/api/expenses/", {
             method: "POST",
             body: JSON.stringify(expense)
+        });
+    },
+
+    updateExpense(expenseId, payload) {
+        return request(`/api/expenses/${expenseId}`, {
+            method: "PATCH",
+            body: JSON.stringify(payload)
+        });
+    },
+
+    deleteExpense(expenseId) {
+        return request(`/api/expenses/${expenseId}`, {
+            method: "DELETE"
         });
     },
 
@@ -92,5 +121,9 @@ export const api = {
         return request("/api/auth/logout", {
             method: "POST"
         });
+    },
+
+    getCategories() {
+        return request("/api/expenses/categories");
     }
 };
