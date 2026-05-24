@@ -66,7 +66,7 @@ def update_expense(
     db_expense = db.query(models.Expense).filter(models.Expense.id == expense_id).first()
     if not db_expense:
         raise HTTPException(status_code=404, detail="Expense not found")
-    if not _current_user.is_admin and not any(s.user_id == _current_user.id for s in db_expense.shares):
+    if not _current_user.is_admin and not any(s.user_id == _current_user.id and s.share < 0 for s in db_expense.shares):
         raise HTTPException(status_code=403, detail="Forbidden")
 
     new_cost = expense.cost if expense.cost is not None else db_expense.cost
@@ -136,7 +136,7 @@ def delete_expense(
     expense = db.query(models.Expense).filter(models.Expense.id == expense_id).first()
     if not expense:
         raise HTTPException(status_code=404, detail="Expense not found")
-    if not _current_user.is_admin and not any(s.user_id == _current_user.id for s in expense.shares):
+    if not _current_user.is_admin and not any(s.user_id == _current_user.id and s.share < 0 for s in expense.shares):
         raise HTTPException(status_code=403, detail="Forbidden")
     db.delete(expense)
     db.commit()
