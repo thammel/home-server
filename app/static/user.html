@@ -12,18 +12,30 @@
 
 <nav>
     <ul><li><a href="/">← Back</a></li></ul>
+    <ul><li><button id="settings-btn" type="button" class="secondary" style="display:none">Settings</button></li></ul>
 </nav>
 
 <h1 id="username"></h1>
 
-<article>
-    <h2>Balance</h2>
-    <p id="balance"></p>
-</article>
+<section>
+    <h2>Settlements</h2>
+    <div id="balance"></div>
+</section>
 
 <section>
     <h2>Expenses</h2>
-    <ul id="expenses"></ul>
+    <table id="expenses">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Description</th>
+                <th>Category</th>
+                <th>Cost</th>
+                <th>Your share</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
 </section>
 
 </main>

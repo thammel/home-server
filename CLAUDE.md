@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+Always use caveman mode.
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## What this is
@@ -52,7 +54,8 @@ OpenAPI docs available at `http://127.0.0.1:8000/docs` when running.
 
 **Expenses:**
 - `GET /api/expenses/` — admin sees all; non-admin sees only expenses where they have a share
-- `GET/PATCH/DELETE /api/expenses/{id}` — admin or any user with a share in that expense
+- `GET /api/expenses/{id}` — admin or any user with a share in that expense
+- `PATCH/DELETE /api/expenses/{id}` — admin or any payer (negative share) in that expense
 
 ## Expense share model
 Signed floats. Negative = payer, positive = consumer. Must sum to 0; positive sum = cost, negative sum = -cost.

@@ -6,25 +6,36 @@ async function renderUserShareFields() {
     container.innerHTML = 'Loading users...';
 
     try {
-        const users = await api.getUsers();
+        const [users, me] = await Promise.all([api.getUsers(), api.getMe()]);
+        const flatmates = users.filter(u => !u.is_admin);
 
         container.innerHTML = '';
         paidBySelect.innerHTML = '';
 
-        users.forEach(u => {
+        flatmates.forEach(u => {
             const opt = document.createElement('option');
             opt.value = u.id;
             opt.textContent = u.name;
+            if (u.id === me.id) opt.selected = true;
             paidBySelect.appendChild(opt);
 
             const row = document.createElement('div');
             row.className = 'share-row';
+            row.style.display = 'flex';
+            row.style.alignItems = 'center';
+            row.style.gap = '0.75rem';
             row.style.marginBottom = '6px';
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.id = `check-${u.id}`;
+            checkbox.dataset.userId = u.id;
+            checkbox.checked = true;
 
             const label = document.createElement('label');
             label.textContent = u.name;
-            label.style.marginRight = '8px';
-            label.htmlFor = `share-${u.id}`;
+            label.htmlFor = `check-${u.id}`;
+            label.style.margin = '0';
 
             const input = document.createElement('input');
             input.type = 'number';
@@ -34,13 +45,21 @@ async function renderUserShareFields() {
             input.min = 0;
             input.step = '0.01';
             input.value = 0;
+            input.style.width = '8rem';
 
+            checkbox.addEventListener('change', () => {
+                input.style.visibility = checkbox.checked ? 'visible' : 'hidden';
+                row.style.opacity = checkbox.checked ? '' : '0.4';
+                if (!checkbox.checked) input.value = 0;
+            });
+
+            row.appendChild(checkbox);
             row.appendChild(label);
             row.appendChild(input);
             container.appendChild(row);
         });
 
-        if (users.length === 0) container.innerHTML = '<em>No users found.</em>';
+        if (flatmates.length === 0) container.innerHTML = '<em>No users found.</em>';
     } catch (err) {
         if (err.status === 401) {
             redirectToLogin();
@@ -63,7 +82,7 @@ async function addExpense() {
     const currency = document.getElementById("currency").value;
     const comment = document.getElementById("comment").value;
     const paidById = parseInt(document.getElementById("paid-by").value);
-    const shareInputs = document.querySelectorAll('#shares-container input');
+    const shareInputs = document.querySelectorAll('#shares-container input[type="number"]');
 
     const shares = [];
     shareInputs.forEach(s => {
@@ -121,12 +140,18 @@ function splitEqually() {
         alert("Enter cost first.");
         return;
     }
-    const inputs = document.querySelectorAll('#shares-container input');
-    if (inputs.length === 0) return;
-    const share = Math.round(cost / inputs.length * 100) / 100;
-    const remainder = Math.round((cost - share * inputs.length) * 100) / 100;
-    inputs.forEach((input, i) => {
-        input.value = i === 0 ? (share + remainder).toFixed(2) : share.toFixed(2);
+    const checkedInputs = Array.from(document.querySelectorAll('#shares-container input[type="checkbox"]:checked'))
+        .map(cb => document.getElementById(`share-${cb.dataset.userId}`));
+    if (checkedInputs.length === 0) {
+        alert("Check at least one person to split between.");
+        return;
+    }
+    const n = checkedInputs.length;
+    const totalCents = Math.round(cost * 100);
+    const baseCents = Math.floor(totalCents / n);
+    const extraCount = totalCents - baseCents * n;
+    checkedInputs.forEach((input, i) => {
+        input.value = ((i < extraCount ? baseCents + 1 : baseCents) / 100).toFixed(2);
     });
 }
 

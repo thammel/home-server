@@ -58,10 +58,35 @@ export const api = {
         return request("/api/balances/");
     },
 
+    getSettlements(mode = "simplified") {
+        return request(`/api/balances/settlements/?mode=${mode}`);
+    },
+
+    getSettings() {
+        return request("/api/settings/");
+    },
+
+    updateSettings(payload) {
+        return request("/api/settings/", { method: "PATCH", body: JSON.stringify(payload) });
+    },
+
     addExpense(expense) {
         return request("/api/expenses/", {
             method: "POST",
             body: JSON.stringify(expense)
+        });
+    },
+
+    updateExpense(expenseId, payload) {
+        return request(`/api/expenses/${expenseId}`, {
+            method: "PATCH",
+            body: JSON.stringify(payload)
+        });
+    },
+
+    deleteExpense(expenseId) {
+        return request(`/api/expenses/${expenseId}`, {
+            method: "DELETE"
         });
     },
 
