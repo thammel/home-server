@@ -44,6 +44,18 @@ OpenAPI docs at `http://127.0.0.1:8000/docs` when running.
 - Sessions roll forward every authenticated request (30-day TTL, extended each call)
 - `get_current_user` dep in `app/auth.py`; override in tests to skip cookie logic
 
+## Admin vs user identity (DESIGN INTENT — not yet fully implemented)
+
+**Admin is NOT a user.** Admin is a separate role that manages the system; admins do not participate in expenses, shares, or balances. Any feature that filters or scopes data by "the current user's shares" must exclude admins entirely — admins always get the full unfiltered view.
+
+Implications:
+- Admin should never appear in share selectors or balance lists
+- Admin expenses/shares (if any exist in DB) are a legacy inconsistency — do not create new ones
+- When adding new endpoints or UI, check: does this show "your data"? If yes, admin gets all data, not their own
+- Current code may still treat admin as participant in some places — this is a known inconsistency to be cleaned up, not a pattern to follow
+
+When implementing any feature, default to: **admin = observer/manager, never participant.**
+
 ## Access control rules
 
 **Users:**
