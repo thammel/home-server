@@ -89,13 +89,30 @@ function renderDetails(expense, users) {
 }
 
 function setupDeleteButton(redirectPath) {
-    document.getElementById("delete-btn").addEventListener("click", async () => {
-        if (!confirm("Delete this expense? This cannot be undone.")) return;
+    const deleteBtn = document.getElementById("delete-btn");
+    const confirmEl = document.getElementById("delete-confirm");
+    const yesBtn = document.getElementById("delete-confirm-yes");
+    const noBtn = document.getElementById("delete-confirm-no");
+
+    deleteBtn.addEventListener("click", () => {
+        deleteBtn.hidden = true;
+        confirmEl.hidden = false;
+    });
+
+    noBtn.addEventListener("click", () => {
+        confirmEl.hidden = true;
+        deleteBtn.hidden = false;
+    });
+
+    yesBtn.addEventListener("click", async () => {
+        yesBtn.disabled = true;
         try {
             await api.deleteExpense(expenseId);
             window.location.href = redirectPath;
         } catch (err) {
             if (err.status === 401) { redirectToLogin(); return; }
+            confirmEl.hidden = true;
+            deleteBtn.hidden = false;
             alert(`Failed to delete: ${err.message}`);
         }
     });

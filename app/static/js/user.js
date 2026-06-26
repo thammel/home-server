@@ -192,7 +192,10 @@ function buildSettlementTable(rows, color) {
 }
 
 function renderStats(expenses, userId) {
-    const userExpenses = expenses.filter(e => e.shares.some(s => s.user_id === userId));
+    const userExpenses = expenses.filter(e =>
+        e.shares.some(s => s.user_id === userId) &&
+        (e.category || "").toLowerCase() !== "settlement"
+    );
 
     const monthData = {};
     for (const e of userExpenses) {
