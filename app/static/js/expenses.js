@@ -121,9 +121,12 @@ async function addExpense() {
         shares: shares,
     };
 
+    const submitBtn = document.getElementById("add-expense-btn");
+    submitBtn.disabled = true;
     try {
         await api.addExpense(expense);
     } catch (err) {
+        submitBtn.disabled = false;
         if (err.status === 401) {
             redirectToLogin();
             return;

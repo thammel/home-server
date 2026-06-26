@@ -24,12 +24,15 @@ async function init() {
     await loadUsers();
     await loadSettings();
 
-    document.getElementById("add-user-form").addEventListener("submit", async (e) => {
+    const addUserForm = document.getElementById("add-user-form");
+    addUserForm.addEventListener("submit", async (e) => {
         e.preventDefault();
         const errorEl = document.getElementById("add-user-error");
         errorEl.textContent = "";
         const name = document.getElementById("new-name").value.trim();
         const password = document.getElementById("new-password").value;
+        const submitBtn = addUserForm.querySelector("button[type=submit]");
+        submitBtn.disabled = true;
         try {
             await api.createUser({ name, password });
             document.getElementById("new-name").value = "";
@@ -37,6 +40,8 @@ async function init() {
             await loadUsers();
         } catch (err) {
             errorEl.textContent = err.message || "Failed to create user.";
+        } finally {
+            submitBtn.disabled = false;
         }
     });
 }
