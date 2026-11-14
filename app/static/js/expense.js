@@ -54,7 +54,7 @@ function showDetails(expense, ctx) {
             el("header", {},
                 el("p", { class: "muted" }, settlement ? "Payment" : expense.category),
                 el("h1", {}, expense.description),
-                el("p", { class: "detail-amount" }, money(expense.cost)),
+                el("p", { class: "detail-amount" }, money(expense.cost, expense.currency)),
             ),
             el("dl", { class: "meta" },
                 el("dt", {}, "Date"), el("dd", {}, formatDate(expense.date)),
@@ -70,9 +70,9 @@ function showDetails(expense, ctx) {
                     const net = r.paid - r.consumed;
                     return el("tr", { class: Number(id) === me.id ? "me" : null },
                         el("td", {}, nameOf[id] ?? `User ${id}`),
-                        el("td", { class: "num" }, r.paid ? money(r.paid) : "—"),
-                        el("td", { class: "num" }, r.consumed ? money(r.consumed) : "—"),
-                        el("td", { class: `num ${net > 0.005 ? "pos" : net < -0.005 ? "neg" : "muted"}` }, signedMoney(net)));
+                        el("td", { class: "num" }, r.paid ? money(r.paid, expense.currency) : "—"),
+                        el("td", { class: "num" }, r.consumed ? money(r.consumed, expense.currency) : "—"),
+                        el("td", { class: `num ${net > 0.005 ? "pos" : net < -0.005 ? "neg" : "muted"}` }, signedMoney(net, expense.currency)));
                 })),
             ),
             actions,

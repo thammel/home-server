@@ -27,21 +27,32 @@ export function mount(target, ...children) {
 
 // --- money -----------------------------------------------------------------
 
-let currencyFormat = new Intl.NumberFormat(undefined, { style: "currency", currency: "EUR" });
+let appCurrency = "EUR";
+const formats = new Map();
+
+function formatFor(code) {
+    if (!formats.has(code)) {
+        try {
+            formats.set(code, new Intl.NumberFormat(undefined, { style: "currency", currency: code }));
+        } catch {
+            return formatFor(appCurrency === code ? "EUR" : appCurrency);
+        }
+    }
+    return formats.get(code);
+}
 
 export function setCurrency(code) {
-    try {
-        currencyFormat = new Intl.NumberFormat(undefined, { style: "currency", currency: code });
-    } catch { /* keep previous */ }
+    appCurrency = code;
 }
 
-export function money(amount) {
-    return currencyFormat.format(Math.abs(amount) < 0.005 ? 0 : amount);
+/** Format an amount; pass an expense's own currency, else the app-wide one is used. */
+export function money(amount, currency = appCurrency) {
+    return formatFor(currency || appCurrency).format(Math.abs(amount) < 0.005 ? 0 : amount);
 }
 
-export function signedMoney(amount) {
-    if (Math.abs(amount) < 0.005) return money(0);
-    return (amount > 0 ? "+" : "−") + money(Math.abs(amount));
+export function signedMoney(amount, currency) {
+    if (Math.abs(amount) < 0.005) return money(0, currency);
+    return (amount > 0 ? "+" : "−") + money(Math.abs(amount), currency);
 }
 
 /** Parse "12,50" or "12.5" -> 12.5; NaN when invalid. */

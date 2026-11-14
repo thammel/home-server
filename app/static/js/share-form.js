@@ -63,6 +63,7 @@ function stateFromExpense(expense, people) {
 export function createExpenseForm(root, { people, me, categories, expense = null, submitLabel, onSubmit, onCancel }) {
     const ids = people.map(p => p.id);
     const nameOf = Object.fromEntries(people.map(p => [p.id, p.inactive ? `${p.name} (inactive)` : p.name]));
+    const fmt = (amount) => money(amount, expense?.currency);
     const state = expense ? stateFromExpense(expense, people) : {
         payMode: "single",
         payerId: ids.includes(me.id) ? me.id : ids[0],
@@ -203,7 +204,7 @@ export function createExpenseForm(root, { people, me, categories, expense = null
             if (paid.some(([, v]) => Number.isNaN(v))) throw new Error("Check the paid amounts.");
             const total = sumCents(paid.map(([, v]) => toCents(v)));
             if (total !== costCents) {
-                throw new Error(`Paid amounts add up to ${money(total / 100)}, but the total is ${money(cost)}.`);
+                throw new Error(`Paid amounts add up to ${fmt(total / 100)}, but the total is ${fmt(cost)}.`);
             }
             for (const [id, v] of paid) if (v > 0) shares.push({ user_id: id, share: -v });
         }
@@ -220,7 +221,7 @@ export function createExpenseForm(root, { people, me, categories, expense = null
             const total = sumCents(parts.map(([, v]) => toCents(v)));
             if (total !== costCents) {
                 const left = (costCents - total) / 100;
-                throw new Error(left > 0 ? `${money(left)} still to assign.` : `${money(-left)} too much assigned.`);
+                throw new Error(left > 0 ? `${fmt(left)} still to assign.` : `${fmt(-left)} too much assigned.`);
             }
             for (const [id, v] of parts) if (v > 0) shares.push({ user_id: id, share: v });
         }
@@ -237,8 +238,8 @@ export function createExpenseForm(root, { people, me, categories, expense = null
         if (state.splitMode === "equal") {
             const cents = splitEqually(toCents(cost), count);
             summary.textContent = count === 1
-                ? `${nameOf[[...state.selected][0]]} covers the full ${money(cost)}.`
-                : `${money(cents[cents.length - 1] / 100)} each for ${count} people.`;
+                ? `${nameOf[[...state.selected][0]]} covers the full ${fmt(cost)}.`
+                : `${fmt(cents[cents.length - 1] / 100)} each for ${count} people.`;
         } else {
             try {
                 buildShares();

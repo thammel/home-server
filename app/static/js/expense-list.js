@@ -32,7 +32,7 @@ export function expenseList(expenses, { nameOf, perspectiveId = null, next = nul
             const net = netFor(e, perspectiveId);
             side = Math.abs(net) < 0.005
                 ? el("small", { class: "muted" }, "even")
-                : el("small", { class: net > 0 ? "pos" : "neg" }, `${net > 0 ? "you get" : "you owe"} ${money(Math.abs(net))}`);
+                : el("small", { class: net > 0 ? "pos" : "neg" }, `${net > 0 ? "you get" : "you owe"} ${money(Math.abs(net), e.currency)}`);
         }
 
         return el("li", {},
@@ -44,7 +44,7 @@ export function expenseList(expenses, { nameOf, perspectiveId = null, next = nul
                         settlement ? null : ` · paid by ${payerNames(e, nameOf)}`),
                 ),
                 el("span", { class: "side" },
-                    el("span", { class: "amount" }, money(e.cost)),
+                    el("span", { class: "amount" }, money(e.cost, e.currency)),
                     side,
                 ),
             ),
