@@ -452,6 +452,21 @@ def test_deactivated_user_cannot_log_in_or_join_new_expenses(client: TestClient)
     assert balances_by_name(client)["Bob"] == -12.0
 
 
+def test_settlement_clears_debt_of_deactivated_user_and_admin(client: TestClient):
+    alice, bob, carol = create_user(client, "Alice"), create_user(client, "Bob"), create_user(client, "Carol")
+    assert post_expense(client, [(alice, -20), (bob, 10), (carol, 10)]).status_code == 201
+    client.patch(f"/api/users/{bob}", json={"is_active": False})
+    client.patch(f"/api/users/{carol}", json={"is_admin": True})
+
+    for debtor in (bob, carol):
+        res = post_expense(client, [(debtor, -10), (alice, 10)], category="Settlement")
+        assert res.status_code == 201, res.json()
+
+    assert all(abs(v) < 0.005 for v in balances_by_name(client).values())
+    # Settled: no open balance left, so a further "settlement" is a new expense again.
+    assert post_expense(client, [(bob, -5), (alice, 5)], category="Settlement").status_code == 400
+
+
 def test_cannot_deactivate_self(client: TestClient):
     me = client.get("/api/users/me").json()["id"]
     assert client.patch(f"/api/users/{me}", json={"is_active": False}).status_code == 403

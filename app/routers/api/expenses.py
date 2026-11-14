@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
 from app import models, schemas
@@ -19,22 +20,31 @@ def validate_shares(shares, cost: float):
         raise HTTPException(status_code=400, detail="Positive and negative shares must match total amount")
 
 
-def validate_share_users(db: Session, shares, already_in_expense: set[int] = frozenset()):
-    """Share users must exist. New participants must be active flatmates (not admins).
+def validate_share_users(db: Session, shares, exempt: set[int] = frozenset()):
+    """Share users must exist. Participants must be active flatmates (not admins) unless exempt.
 
-    Users already in an expense may stay in it when it is edited, even if they were
-    deactivated since, so old expenses remain editable.
+    Exempt: users already in an edited expense (so old expenses stay editable) and,
+    for settlements, users with an open balance.
     """
     for user_id in {s.user_id for s in shares}:
         user = db.get(models.User, user_id)
         if not user:
             raise HTTPException(status_code=400, detail=f"User {user_id} not found")
-        if user_id in already_in_expense:
+        if user_id in exempt:
             continue
         if user.is_admin:
             raise HTTPException(status_code=400, detail=f"Admin '{user.name}' cannot take part in expenses")
         if not user.is_active:
             raise HTTPException(status_code=400, detail=f"User '{user.name}' is deactivated")
+
+
+def _users_with_open_balance(db: Session) -> set[int]:
+    rows = (
+        db.query(models.ExpenseShare.user_id, func.sum(models.ExpenseShare.share))
+        .group_by(models.ExpenseShare.user_id)
+        .all()
+    )
+    return {user_id for user_id, total in rows if abs(total) >= 0.005}
 
 
 def _get_expense_or_404(db: Session, expense_id: int) -> models.Expense:
@@ -60,7 +70,10 @@ def create_expense(
     _current_user: models.User = Depends(get_current_user),
 ):
     validate_shares(expense.shares, expense.cost)
-    validate_share_users(db, expense.shares)
+    # Deactivated users and admins may still owe or be owed money; a settlement
+    # must be able to clear that, or the debt stays open forever.
+    allowed = _users_with_open_balance(db) if expense.category.casefold() == "settlement" else set()
+    validate_share_users(db, expense.shares, exempt=allowed)
 
     db_expense = models.Expense(
         date=expense.date,
@@ -95,7 +108,7 @@ def update_expense(
     if expense.shares is not None or expense.cost is not None:
         validate_shares(new_shares, new_cost)
     if expense.shares is not None:
-        validate_share_users(db, expense.shares, already_in_expense={s.user_id for s in db_expense.shares})
+        validate_share_users(db, expense.shares, exempt={s.user_id for s in db_expense.shares})
 
     for field in ("date", "description", "category", "cost", "currency"):
         value = getattr(expense, field)
