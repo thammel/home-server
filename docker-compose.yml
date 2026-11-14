@@ -12,6 +12,9 @@ services:
         required: false
     environment:
       TZ: ${TZ:-Europe/Berlin}
+      # The host reaches the container via the docker bridge, not 127.0.0.1. Trusting
+      # its X-Forwarded-For is safe only because the port is bound to loopback above.
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-*}
     volumes:
       - data:/data
     logging:

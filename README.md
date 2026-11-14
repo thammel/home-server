@@ -82,7 +82,7 @@ expenses.example.com {
 }
 ```
 
-Then set `COOKIE_SECURE=true` and `FORWARDED_ALLOW_IPS=*` in `.env`, and publish the port only locally (`PORT=127.0.0.1:8000`).
+Then set `COOKIE_SECURE=true` in `.env`. Compose publishes the port on `127.0.0.1` only and trusts the proxy's `X-Forwarded-For` header, so the login throttle sees real client IPs.
 
 ## Configuration
 
