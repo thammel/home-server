@@ -80,6 +80,17 @@ def delete_user_sessions(db: Session, user_id: int, keep_session_id: str | None 
     query.delete(synchronize_session=False)
 
 
+def _allowed_with_temporary_password(request: Request, user: models.User) -> bool:
+    route = (request.method, request.url.path.rstrip("/"))
+    return route in {
+        ("GET", "/api/users/me"),
+        ("GET", "/api/settings"),
+        ("GET", f"/api/users/{user.id}"),
+        ("PATCH", f"/api/users/{user.id}"),
+        ("POST", "/api/auth/logout"),
+    }
+
+
 def get_current_user(
     request: Request,
     response: Response,
@@ -109,6 +120,11 @@ def get_current_user(
         session.expires_at = new_expiry
         db.commit()
         set_session_cookie(response, session.session_id)
+
+    # The frontend redirects to the password form, but the API must enforce it too,
+    # or a temporary password would grant full access indefinitely.
+    if session.user.must_change_password and not _allowed_with_temporary_password(request, session.user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Change your temporary password first")
 
     return session.user
 

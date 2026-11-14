@@ -698,6 +698,14 @@ def test_real_app_boots_seeds_admin_and_serves_pages():
         assert login.json()["must_change_password"] is True
         assert c.get("/api/users/me").json()["name"] == "admin"
 
+        # Temporary password: only the password change is allowed.
+        assert c.get("/api/expenses/").status_code == 403
+        assert c.patch("/api/settings/", json={"app_name": "X"}).status_code == 403
+        admin_id = c.get("/api/users/me").json()["id"]
+        res = c.patch(f"/api/users/{admin_id}", json={"password": "newpassword1", "current_password": "changeme"})
+        assert res.status_code == 200
+        assert c.get("/api/expenses/").status_code == 200
+
         # Renamed app shows up in served pages, HTML-escaped.
         assert "<title>Flat Expenses</title>" in c.get("/").text
         assert c.patch("/api/settings/", json={"app_name": "Casa <b>&</b>"}).status_code == 200
