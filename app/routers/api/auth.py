@@ -23,11 +23,25 @@ router = APIRouter()
 class LoginThrottle:
     """In-memory sliding window of failed logins per (client address, username)."""
 
+    # Each failed login with a new name adds a key; bound memory against name spraying.
+    MAX_KEYS = 10_000
+
     def __init__(self, max_failures: int, window_seconds: int):
         self.max_failures = max_failures
         self.window = window_seconds
         self._failures: dict[tuple[str, str], deque[float]] = defaultdict(deque)
         self._lock = threading.Lock()
+        self._last_sweep = time.monotonic()
+
+    def _sweep(self, now: float) -> None:
+        if now - self._last_sweep >= self.window:
+            self._last_sweep = now
+            for key in [k for k, v in self._failures.items() if not v or v[-1] <= now - self.window]:
+                del self._failures[key]
+        if len(self._failures) > self.MAX_KEYS:
+            by_age = sorted(self._failures, key=lambda k: self._failures[k][-1] if self._failures[k] else 0)
+            for key in by_age[: len(self._failures) - self.MAX_KEYS]:
+                del self._failures[key]
 
     def _recent(self, key: tuple[str, str], now: float) -> deque[float]:
         attempts = self._failures[key]
@@ -51,6 +65,7 @@ class LoginThrottle:
         now = time.monotonic()
         with self._lock:
             self._recent(key, now).append(now)
+            self._sweep(now)
 
     def reset(self, key: tuple[str, str]) -> None:
         with self._lock:

@@ -467,6 +467,21 @@ def test_settlement_clears_debt_of_deactivated_user_and_admin(client: TestClient
     assert post_expense(client, [(bob, -5), (alice, 5)], category="Settlement").status_code == 400
 
 
+def test_login_throttle_memory_is_bounded(monkeypatch):
+    monkeypatch.setattr(auth.LoginThrottle, "MAX_KEYS", 100)
+    clock = [1000.0]
+    monkeypatch.setattr(auth.time, "monotonic", lambda: clock[0])
+    throttle = auth.LoginThrottle(max_failures=5, window_seconds=60)
+
+    for i in range(500):
+        throttle.record_failure(("1.2.3.4", f"name{i}"))
+    assert len(throttle._failures) <= 100
+
+    clock[0] += 61
+    throttle.record_failure(("1.2.3.4", "fresh"))
+    assert list(throttle._failures) == [("1.2.3.4", "fresh")]
+
+
 def test_cannot_deactivate_self(client: TestClient):
     me = client.get("/api/users/me").json()["id"]
     assert client.patch(f"/api/users/{me}", json={"is_active": False}).status_code == 403
