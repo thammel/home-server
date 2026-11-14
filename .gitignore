@@ -4,3 +4,7 @@ __pycache__/
 .venv/
 home_server.egg-info/
 *.db
+
+# Claude Code personal files
+.claude/settings.local.json
+CLAUDE.local.md

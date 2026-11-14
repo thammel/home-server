@@ -30,6 +30,21 @@ pip install -e .[dev]
 
 OpenAPI docs at `http://127.0.0.1:8000/docs` when running.
 
+Local dev env (Linux) uses uv: `uv venv --python 3.13 && uv pip install -e '.[dev]' ruff`. Hooks call `.venv/bin/pytest` and `.venv/bin/ruff` directly.
+
+## Deployment
+- Host-specific details (server, paths, service, proxy) live in `CLAUDE.local.md` (gitignored). Never copy them into tracked files, commits or PR text: the repo is public.
+- Merging to `main` = shipping to production on the next pull + restart.
+- Never change files on the server directly. Every change goes through git.
+- The production `expenses.db` is real data. Never delete, overwrite or run migrations against it without the user's explicit go-ahead.
+- Schema changes to `app/models.py` need a migration plan: `Base.metadata.create_all` adds new tables but never alters existing ones.
+
+## Claude Code hooks (`.claude/`)
+- SessionStart: prints branch, status, recent commits.
+- PreToolUse(Bash): `guard.py` blocks deleting `*.db`, force-push, `git reset --hard`, destructive ssh commands.
+- PostToolUse(Write|Edit): ruff format + fix on the edited `.py` file.
+- Stop: runs `pytest -q -x` when `app/` or `tests/` Python files changed; failures block stopping.
+
 ## Key files
 - `app/main.py` — app entry, DB init, admin bootstrap, route registration, static file mounting
 - `app/auth.py` — bcrypt_sha256 hashing, rolling session creation/validation, `get_current_user` dep
@@ -100,3 +115,29 @@ All JS use ES modules. `api.js` exports `api` object and `redirectToLogin()`.
 
 ## Testing pattern
 Two fixtures: `client` (admin session), `non_admin_client` (regular user session). Both use in-memory SQLite (`sqlite://`) with `StaticPool`, override `get_db` + `get_current_user`. Use `create_user(client, name)` helper for setup within tests.
+## Code comments
+- Default to no comment. Well-named functions and variables should explain *what* the code does.
+- Only comment to explain *why*: non-obvious decisions, workarounds, edge cases, links to issues/specs, or surprising behavior.
+- Never write comments that restate the code, narrate your changes, or address the reader (e.g. "# Added error handling", "# Updated to use new API").
+- Don't leave comments about what was removed or changed. That belongs in the commit, not the code.
+- Keep docstrings for public APIs short: one line summary, then params/returns only if non-obvious.
+
+## Commit messages
+Enforced by the git `commit-msg` hook (install: `ln -s ../../.claude/hooks/commit_msg.py .git/hooks/commit-msg`).
+- Follow Conventional Commits: `type(scope): summary` (types: feat, fix, refactor, docs, test, chore, perf).
+- Summary line: imperative mood, max ~50 chars, no trailing period ("fix(auth): handle expired sessions").
+- Leave a blank line, then a body wrapped at 72 chars explaining *why* the change was made and any notable trade-offs. Skip the body for trivial changes.
+- Describe the change's intent, not a file-by-file list of what was edited.
+- One logical change per commit; if the work spans unrelated concerns, propose splitting it.
+- Compact the message to the minimum. Reference issues when relevant (`Closes #123`).
+- No emojis, no "This commit...", no marketing language. No Co-authored-by trailer.
+
+## Pull requests
+- Title: same format as a commit subject (`type(scope): summary`, imperative, max ~50 chars, no period).
+- Body sections, each kept short:
+  - `## Why`: the problem or goal in 1-3 sentences. Link issues (`Closes #123`).
+  - `## What`: the notable changes and trade-offs as bullets, grouped by intent, not a file-by-file list.
+  - `## Testing`: what was run or checked, as a checklist. Say plainly what was not tested.
+  - `## Deploy notes` (only when relevant): steps needed on the server, migrations, config/env changes, risk to `expenses.db`.
+- One logical change per PR. Mention conflicts with or dependencies on other open PRs.
+- No emojis, no marketing language, no "Generated with" footer, no Co-authored-by lines.
