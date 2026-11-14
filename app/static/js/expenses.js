@@ -95,7 +95,7 @@ function exportCsv(rows, nameOf, me) {
 function csvCell(value) {
     let text = String(value ?? "");
     // Prevent spreadsheet formula injection.
-    if (/^[=+\-@\t\r]/.test(text) && !/^-?\d/.test(text)) text = "'" + text;
+    if (/^[=+\-@\t\r]/.test(text) && !/^-?\d+(\.\d+)?$/.test(text)) text = "'" + text;
     return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
