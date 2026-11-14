@@ -6,7 +6,7 @@ services:
     # Restart after crashes and after the server reboots (unless stopped by hand).
     restart: unless-stopped
     ports:
-      - "${PORT:-8000}:8000"
+      - "127.0.0.1:${PORT:-8000}:8000"
     env_file:
       - path: .env
         required: false
