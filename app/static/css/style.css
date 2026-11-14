@@ -325,10 +325,10 @@ input.amount-input {
     font-size: 0.875rem;
     border-radius: 999px;
     background: var(--pico-form-element-background-color);
-    color: var(--pico-color);
+    color: var(--pico-contrast);
     border: 1px solid var(--pico-form-element-border-color);
 }
-.chip:hover { background: var(--pico-primary-focus); border-color: var(--pico-primary-border); color: var(--pico-color); }
+.chip:hover { background: var(--pico-primary-focus); border-color: var(--pico-primary-border); color: var(--pico-contrast); }
 .chip.selected {
     background: var(--pico-primary-background);
     border-color: var(--pico-primary-border);
