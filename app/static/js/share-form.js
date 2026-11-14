@@ -4,18 +4,36 @@ import { el, money, parseAmount, showMessage, splitEqually, toCents, today, moun
 
 const sumCents = (values) => values.reduce((a, b) => a + b, 0);
 
+/**
+ * Convert amounts to whole cents that add up to exactly totalCents.
+ * Older expenses store unrounded shares (100 / 3 = 33.333333 each); rounding
+ * each one alone would leave a cent unassigned and block saving the form.
+ */
+function allocateCents(amounts, totalCents) {
+    const entries = Object.entries(amounts).map(([id, v]) => [id, v * 100]);
+    const cents = Object.fromEntries(entries.map(([id, v]) => [id, Math.floor(v + 1e-6)]));
+    let left = totalCents - sumCents(Object.values(cents));
+    const byRemainder = entries.sort((a, b) => (b[1] - Math.floor(b[1])) - (a[1] - Math.floor(a[1])));
+    for (let i = 0; left > 0 && entries.length; i = (i + 1) % entries.length, left--) {
+        cents[byRemainder[i][0]] += 1;
+    }
+    return cents;
+}
+
 /** Derive form state from an existing expense. */
 function stateFromExpense(expense, people) {
     const order = people.map(p => p.id);
-    const paid = {};
-    const consumed = {};
+    const paidRaw = {};
+    const consumedRaw = {};
     for (const s of expense.shares) {
-        const bucket = s.share < 0 ? paid : consumed;
-        bucket[s.user_id] = (bucket[s.user_id] ?? 0) + toCents(Math.abs(s.share));
+        const bucket = s.share < 0 ? paidRaw : consumedRaw;
+        bucket[s.user_id] = (bucket[s.user_id] ?? 0) + Math.abs(s.share);
     }
+    const costCents = toCents(expense.cost);
+    const paid = allocateCents(paidRaw, costCents);
+    const consumed = allocateCents(consumedRaw, costCents);
     const payerIds = Object.keys(paid).map(Number);
     const selected = order.filter(id => consumed[id]);
-    const costCents = toCents(expense.cost);
     const equalSplit = splitEqually(costCents, selected.length).sort((a, b) => a - b);
     const actual = selected.map(id => consumed[id]).sort((a, b) => a - b);
     const isEqual = equalSplit.length === actual.length && equalSplit.every((v, i) => v === actual[i]);
