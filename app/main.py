@@ -92,12 +92,20 @@ app.mount("/static", StaticFiles(directory=config.STATIC_DIR), name="static")
 
 def _page(name: str):
     path = config.STATIC_DIR / name
+    cached = {"mtime": None, "text": ""}
+
+    def template() -> str:
+        # Keyed on mtime so edited pages show up without a restart (--reload only watches .py).
+        mtime = path.stat().st_mtime_ns
+        if cached["mtime"] != mtime:
+            cached["text"], cached["mtime"] = path.read_text(encoding="utf-8"), mtime
+        return cached["text"]
 
     def serve():
         # Pages carry an {{APP_NAME}} placeholder so the admin-chosen name shows without a flash.
         with SessionLocal() as db:
             app_name = get_setting(db, "app_name")
-        return HTMLResponse(path.read_text(encoding="utf-8").replace("{{APP_NAME}}", html.escape(app_name)))
+        return HTMLResponse(template().replace("{{APP_NAME}}", html.escape(app_name)))
 
     return serve
 
