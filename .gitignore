@@ -10,3 +10,7 @@ backups/
 data/
 .env
 .pytest_cache/
+
+# Claude Code personal files
+.claude/settings.local.json
+CLAUDE.local.md
