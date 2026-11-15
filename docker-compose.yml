@@ -1,0 +1,28 @@
+services:
+  app:
+    build: .
+    image: flat-expenses:latest
+    container_name: flat-expenses
+    # Restart after crashes and after the server reboots (unless stopped by hand).
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${PORT:-8000}:8000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      TZ: ${TZ:-Europe/Berlin}
+      # The host reaches the container via the docker bridge, not 127.0.0.1. Trusting
+      # its X-Forwarded-For is safe only because the port is bound to loopback above.
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-*}
+    volumes:
+      - data:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  # Database + daily backups. Survives container rebuilds; `docker compose down -v` deletes it.
+  data:
