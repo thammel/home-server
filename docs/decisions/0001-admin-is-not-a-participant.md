@@ -1,6 +1,6 @@
 # 0001. Admin manages the app and never takes part in expenses
 
-- **Status:** accepted
+- **Status:** accepted, amended by 0006 (admins do not see personal data)
 - **Date:** 2026-11-15 (recorded after the fact; in force since PR #8)
 - **Relates to:** `validate_share_users` in `app/routers/api/expenses.py`, `_participants` in `app/routers/api/balances.py`
 
@@ -10,7 +10,7 @@ The first admin account is created automatically on startup and exists to manage
 
 ## Decision
 
-Admin is a manager and observer role. Admins cannot be added as share participants in new expenses, are left out of balances and settlements, and always see all data unfiltered.
+Admin is a manager and observer role. Admins cannot be added as share participants in new expenses, are left out of balances and settlements, and see all shared data unfiltered. Personal data is the exception (ADR 0006).
 
 ## Consequences
 
