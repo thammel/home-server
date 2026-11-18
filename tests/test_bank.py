@@ -304,6 +304,8 @@ def test_disabled_accounts_are_skipped(flat, fake_bank):
     flat["anna"].patch(f"/api/bank/accounts/{account['id']}", json={"enabled": False})
     sync(flat["anna"])
     assert fake_bank.sessions[1].kwargs["skip_ibans"] == {IBAN}
+    assert flat["anna"].get("/api/bank/transactions").json() == []
+    assert flat["anna"].get("/api/bank/").json()["new_count"] == 0
 
 
 def test_wrong_pin_is_reported_and_not_retried(flat, fake_bank):

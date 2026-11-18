@@ -57,6 +57,11 @@ def _own_transactions(db: Session, user: models.User):
     )
 
 
+def _visible_transactions(db: Session, user: models.User):
+    """Lines of switched-off accounts stay stored but out of the way."""
+    return _own_transactions(db, user).filter(models.BankAccount.enabled.is_(True))
+
+
 @router.get("/", response_model=schemas.BankStatus)
 def get_status(
     db: Session = Depends(get_db), user: models.User = Depends(get_current_user)
@@ -69,7 +74,7 @@ def get_status(
     return schemas.BankStatus(
         enabled=True,
         connection=connection,
-        new_count=_own_transactions(db, user)
+        new_count=_visible_transactions(db, user)
         .filter(models.BankTransaction.status == "new")
         .count(),
         default_since=importer.default_since(db, connection, datetime.date.today())
@@ -262,7 +267,7 @@ def list_transactions(
     db: Session = Depends(get_db),
     user: models.User = Depends(_member),
 ):
-    query = _own_transactions(db, user)
+    query = _visible_transactions(db, user)
     if status_filter:
         query = query.filter(models.BankTransaction.status == status_filter)
     rows = query.order_by(
