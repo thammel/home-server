@@ -208,6 +208,10 @@ class BankTransactionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class BankCount(BaseModel):
+    count: int
+
+
 class BankTransactionUpdate(BaseModel):
     status: Literal["new", "ignored"] | None = None
     expense_id: int | None = None

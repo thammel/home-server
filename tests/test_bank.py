@@ -386,7 +386,58 @@ def test_new_sync_replaces_one_waiting_for_approval(flat, fake_bank):
     old_id = sync(flat["anna"]).json()["sync_id"]
     assert sync(flat["anna"]).status_code == 200
     assert fake_bank.sessions[0].closed
-    assert flat["anna"].post(f"/api/bank/sync/{old_id}/continue", json={}).status_code == 404
+    assert (
+        flat["anna"].post(f"/api/bank/sync/{old_id}/continue", json={}).status_code
+        == 404
+    )
+
+
+def test_ignore_all_new(flat, fake_bank):
+    connect(flat["anna"])
+    fake_bank.script = [result(tx(3, "-1"), tx(4, "-2"))]
+    sync(flat["anna"])
+    res = flat["anna"].post("/api/bank/transactions/ignore-new")
+    assert res.json() == {"count": 2}
+    assert transactions(flat["anna"], "new") == []
+    assert flat["ben"].post("/api/bank/transactions/ignore-new").json() == {"count": 0}
+
+
+def test_undo_last_sync_keeps_recorded_lines_and_refetches_the_rest(flat, fake_bank):
+    connect(flat["anna"])
+    fake_bank.script = [
+        result(tx(3, "-1")),
+        result(tx(3, "-1"), tx(4, "-2"), tx(5, "-3"), tx(6, "50")),
+        result(tx(3, "-1"), tx(4, "-2"), tx(5, "-3"), tx(6, "50")),
+    ]
+    sync(flat["anna"])
+    sync(flat["anna"])
+    line = next(t for t in transactions(flat["anna"]) if t["amount"] == -2)
+    anna_id = flat["ids"]["Anna"]
+    expense = (
+        flat["anna"]
+        .post(
+            "/api/expenses/",
+            json={
+                "date": "2026-11-04",
+                "description": "x",
+                "category": "Food",
+                "cost": 2,
+                "shares": [
+                    {"user_id": anna_id, "share": -2},
+                    {"user_id": anna_id, "share": 2},
+                ],
+            },
+        )
+        .json()
+    )
+    flat["anna"].patch(
+        f"/api/bank/transactions/{line['id']}", json={"expense_id": expense["id"]}
+    )
+    assert flat["anna"].delete("/api/bank/last-sync").json() == {"count": 2}
+    amounts = sorted(t["amount"] for t in transactions(flat["anna"]))
+    assert amounts == [-2, -1]
+    third = sync(flat["anna"]).json()
+    assert (third["new"], third["known"]) == (2, 2)
 
 
 def test_cancel_sync(flat, fake_bank):
@@ -561,12 +612,26 @@ def test_convert_mt940_transaction():
 
     from app.bank.fints_backend import _convert
 
-    converted = _convert({
-        "date": Date(2026, 11, 2), "entry_date": Date(2026, 11, 3), "amount": Amount("12.50", "D", "EUR"),
-        "applicant_name": "  Shop   GmbH ", "applicant_iban": "DE00 1234", "purpose": "Card\npayment",
-        "end_to_end_reference": "NOTPROVIDED", "customer_reference": "NONREF", "bank_reference": None,
-    })
+    converted = _convert(
+        {
+            "date": Date(2026, 11, 2),
+            "entry_date": Date(2026, 11, 3),
+            "amount": Amount("12.50", "D", "EUR"),
+            "applicant_name": "  Shop   GmbH ",
+            "applicant_iban": "DE00 1234",
+            "purpose": "Card\npayment",
+            "end_to_end_reference": "NOTPROVIDED",
+            "customer_reference": "NONREF",
+            "bank_reference": None,
+        }
+    )
     assert converted == FetchedTransaction(
-        booking_date=datetime.date(2026, 11, 3), value_date=datetime.date(2026, 11, 2), amount=Decimal("-12.50"),
-        currency="EUR", counterparty="Shop GmbH", counterparty_iban="DE001234", purpose="Card payment",
-        reference="")
+        booking_date=datetime.date(2026, 11, 3),
+        value_date=datetime.date(2026, 11, 2),
+        amount=Decimal("-12.50"),
+        currency="EUR",
+        counterparty="Shop GmbH",
+        counterparty_iban="DE001234",
+        purpose="Card payment",
+        reference="",
+    )

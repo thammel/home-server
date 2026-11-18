@@ -260,6 +260,50 @@ def cancel_sync(sync_id: str, user: models.User = Depends(_member)):
         registry.end(user.id)
 
 
+@router.post("/transactions/ignore-new", response_model=schemas.BankCount)
+def ignore_all_new(db: Session = Depends(get_db), user: models.User = Depends(_member)):
+    rows = (
+        _visible_transactions(db, user)
+        .filter(models.BankTransaction.status == "new")
+        .all()
+    )
+    for tx in rows:
+        tx.status = "ignored"
+    db.commit()
+    return schemas.BankCount(count=len(rows))
+
+
+@router.delete("/last-sync", response_model=schemas.BankCount)
+def undo_last_sync(db: Session = Depends(get_db), user: models.User = Depends(_member)):
+    """Forget what the last sync imported, so the next sync fetches it again.
+
+    Lines already recorded as expenses stay, so no expense loses its bank line.
+    """
+    if registry.is_busy(user.id):
+        raise HTTPException(status_code=409, detail="A sync is running")
+    latest = (
+        _own_transactions(db, user)
+        .with_entities(models.BankTransaction.fetched_at)
+        .order_by(models.BankTransaction.fetched_at.desc())
+        .limit(1)
+        .scalar()
+    )
+    if latest is None:
+        return schemas.BankCount(count=0)
+    rows = (
+        _own_transactions(db, user)
+        .filter(
+            models.BankTransaction.fetched_at == latest,
+            models.BankTransaction.expense_id.is_(None),
+        )
+        .all()
+    )
+    for tx in rows:
+        db.delete(tx)
+    db.commit()
+    return schemas.BankCount(count=len(rows))
+
+
 @router.get("/transactions", response_model=list[schemas.BankTransactionRead])
 def list_transactions(
     status_filter: str | None = Query(

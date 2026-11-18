@@ -3,7 +3,7 @@ import { api } from "./api.js";
 import { categoriesByUse } from "./expense-list.js";
 import { boot, showFatal } from "./layout.js";
 import { createExpenseForm } from "./share-form.js";
-import { $, el, formatDate, money, mount, showMessage, splitEqually, toCents, toast } from "./ui.js";
+import { $, confirmButton, el, formatDate, money, mount, showMessage, splitEqually, toCents, toast } from "./ui.js";
 
 const page = $("#page");
 const syncBox = el("div");
@@ -219,7 +219,26 @@ function renderReview(items, index) {
             el("button", { type: "button", class: "secondary outline", disabled: index === 0, onclick: () => renderReview(items, index - 1) }, "Back"),
             el("button", { type: "button", class: "secondary outline", disabled: index === items.length - 1, onclick: () => renderReview(items, index + 1) }, "Skip for now")),
         body,
+        el("div", { class: "actions" },
+            confirmButton("Ignore all remaining", `Ignore ${items.length}?`, async () => {
+                const { count } = await api.ignoreNewBankTransactions();
+                toast(`${count} ignored`);
+                await loadReview();
+            }, { class: "secondary outline" }),
+            confirmButton("Undo last sync", "Really undo?", undoLastSync, { class: "secondary outline" })),
     ));
+}
+
+async function undoLastSync() {
+    try {
+        const { count } = await api.undoLastBankSync();
+        toast(`${count} lines removed; the next sync fetches them again`);
+        ctx.status = await api.getBank();
+        renderSyncForm();
+        await loadReview();
+    } catch (err) {
+        toast(err.message, "error");
+    }
 }
 
 // --- handled ---------------------------------------------------------------------

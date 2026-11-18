@@ -68,6 +68,8 @@ export const api = {
     cancelBankSync: (syncId) => request(`/api/bank/sync/${encodeURIComponent(syncId)}`, { method: "DELETE" }),
     getBankTransactions: (status) => request("/api/bank/transactions" + (status ? `?status=${status}` : "")),
     updateBankTransaction: (txId, payload) => request(`/api/bank/transactions/${txId}`, json("PATCH", payload)),
+    ignoreNewBankTransactions: () => request("/api/bank/transactions/ignore-new", { method: "POST" }),
+    undoLastBankSync: () => request("/api/bank/last-sync", { method: "DELETE" }),
 };
 
 export function redirectToLogin() {
