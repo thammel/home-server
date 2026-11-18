@@ -99,7 +99,7 @@ async function renderBank(box) {
     },
     field("bank_code", { "aria-label": "Bank code (BLZ)", inputmode: "numeric", pattern: "\\d{8}", maxlength: "8", autocomplete: "off" }),
     field("server_url", { "aria-label": "FinTS URL", type: "url", placeholder: "https://…", autocomplete: "off" }),
-    field("login_name", { "aria-label": "Online banking login", autocomplete: "off" }),
+    field("login_name", { "aria-label": "Online banking username (not the PIN)", placeholder: "Login name or access number", autocomplete: "off" }),
     el("small", { class: "muted" }, "Your PIN is never saved. You type it in each time you sync."),
     el("div", { class: "actions" }, el("button", { type: "submit" }, conn ? "Save" : "Connect")),
     msg);
