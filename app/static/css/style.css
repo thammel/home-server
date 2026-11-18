@@ -92,7 +92,7 @@ button.small, [role=button].small, a.small[role=button] {
 .link-button:hover { text-decoration: underline; background: none; }
 
 button.armed { border-color: var(--neg); color: var(--neg); }
-.bulk-actions { margin-top: 1rem; padding-top: 1rem; border-top: 1px dashed var(--pico-muted-border-color); }
+.actions.bulk-actions { margin-top: 1rem; padding-top: 1rem; border-top: 1px dashed var(--pico-muted-border-color); }
 .bulk-actions button { border-color: var(--neg); color: var(--neg); }
 .bulk-actions button.armed { background: var(--neg); color: #fff; }
 
