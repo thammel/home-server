@@ -162,6 +162,7 @@ Two fixtures: `client` (admin session), `non_admin_client` (regular user "TestUs
 - release-please (`.github/workflows/release.yml`) keeps a release PR open on `main`. It bumps `version` in `pyproject.toml` and writes `CHANGELOG.md` from Conventional Commits.
 - Merging the release PR tags `vX.Y.Z` and publishes a GitHub Release. Never edit `CHANGELOG.md`, the version or `.release-please-manifest.json` by hand.
 - Version bump comes from commit types: `fix` patch, `feat` minor, `type!:` or `BREAKING CHANGE:` footer major. PR squash titles must be Conventional Commits too.
+- The same workflow pushes the image `ghcr.io/thammel/home-server` (`X.Y.Z`, `X.Y`, `latest`; amd64 + arm64). `docker-compose.release.yml` runs it without a checkout.
 - Deploy: fetch tags, check out the release tag, restart. Rollback: check out the previous tag, restart (schema changes are additive, ADR 0002, so older code runs on a newer DB).
 
 ## Commit messages
