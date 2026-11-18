@@ -46,6 +46,14 @@ Local dev env (Linux) uses uv: `uv venv --python 3.13 && uv pip install -e '.[de
 - The production `expenses.db` is real data. Never delete, overwrite or run migrations against it without the user's explicit go-ahead.
 - Migrations run automatically on startup (see Schema changes), so the next restart after a schema change migrates the production DB. Back it up first.
 
+## How to ask a question
+The user knows the tools but not necessarily every protocol underneath (FinTS, SQLite, CSS cascade). A question they cannot evaluate is a decision waved through, not made.
+- One decision at a time. Ask, wait for the answer, then open the next.
+- Problem first: the real-world situation, what goes wrong if chosen badly, then the options. Never open with a protocol or library name.
+- Say where things stand in two or three lines before asking.
+- Always offer "Not sure, talk me through it" as an option.
+- Affirm what is sound before correcting what is not.
+
 ## Decisions
 - Load-bearing choices are recorded as ADRs in `docs/decisions/` and listed at session start.
 - Before changing how the project does something, use the `decision-record` skill: follow an existing ADR, or tell the user when new work contradicts one. Never leave code and ADR disagreeing.
