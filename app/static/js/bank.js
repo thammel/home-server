@@ -176,7 +176,9 @@ function renderReview(items, index) {
             },
         }, category, chips,
         el("datalist", { id: "bank-categories" }, ctx.categories.map(c => el("option", { value: c }))),
-        el("div", { class: "actions" }, el("button", { type: "submit" }, "Save personal expense")), msg));
+        el("div", { class: "actions" },
+            el("button", { type: "submit" }, "Save personal expense"),
+            el("button", { type: "button", class: "secondary outline", onclick: () => mount(body) }, "Cancel")), msg));
         category.focus();
     };
 
