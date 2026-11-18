@@ -332,8 +332,6 @@ def test_approval_flow(flat, fake_bank):
     ]
     first = sync(flat["anna"]).json()
     assert first["status"] == "approval" and first["decoupled"] is True
-    # Only one sync per user while one is waiting.
-    assert sync(flat["anna"]).status_code == 409
     # Another user cannot continue it.
     assert (
         flat["ben"]
@@ -380,6 +378,15 @@ def test_parked_sync_expires_and_closes_the_session(flat, fake_bank):
     )
     fake_bank.script = [result()]
     assert sync(flat["anna"]).status_code == 200
+
+
+def test_new_sync_replaces_one_waiting_for_approval(flat, fake_bank):
+    connect(flat["anna"])
+    fake_bank.script = [Challenge("Approve", decoupled=True), result()]
+    old_id = sync(flat["anna"]).json()["sync_id"]
+    assert sync(flat["anna"]).status_code == 200
+    assert fake_bank.sessions[0].closed
+    assert flat["anna"].post(f"/api/bank/sync/{old_id}/continue", json={}).status_code == 404
 
 
 def test_cancel_sync(flat, fake_bank):

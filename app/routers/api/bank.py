@@ -197,6 +197,7 @@ def start_sync(
     since = payload.since or importer.default_since(db, connection, today)
     if since > today:
         raise HTTPException(status_code=400, detail="The start date is in the future")
+    registry.drop_parked(user.id)
     if not registry.begin(user.id):
         raise HTTPException(status_code=409, detail="A sync is already running")
     try:

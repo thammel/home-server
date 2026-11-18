@@ -69,6 +69,16 @@ class SyncRegistry:
             pending.session.close()
             self.end(pending.user_id)
 
+    def drop_parked(self, user_id: int):
+        """A new sync replaces one left waiting, e.g. after a page reload lost its id."""
+        with self._lock:
+            ids = [i for i, p in self._pending.items() if p.user_id == user_id]
+        for sync_id in ids:
+            pending = self.take(sync_id, user_id)
+            if pending is not None:
+                pending.session.close()
+                self.end(user_id)
+
     def clear(self):
         for sync_id in list(self._pending):
             self.expire(sync_id)
