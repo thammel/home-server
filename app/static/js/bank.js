@@ -219,7 +219,7 @@ function renderReview(items, index) {
             el("button", { type: "button", class: "secondary outline", disabled: index === 0, onclick: () => renderReview(items, index - 1) }, "Back"),
             el("button", { type: "button", class: "secondary outline", disabled: index === items.length - 1, onclick: () => renderReview(items, index + 1) }, "Skip for now")),
         body,
-        el("div", { class: "actions" },
+        el("div", { class: "actions bulk-actions" },
             confirmButton("Ignore all remaining", `Ignore ${items.length}?`, async () => {
                 const { count } = await api.ignoreNewBankTransactions();
                 toast(`${count} ignored`);
