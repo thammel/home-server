@@ -1,6 +1,6 @@
 # Plan: bank import (FinTS)
 
-Status: draft. Manual sync only for now. Depends on
+Status: Phase 1 and 2 implemented (manual sync). Not yet tried against a real bank from the app. Depends on
 `personal-expenses.md`.
 
 ## Goal
@@ -90,8 +90,8 @@ Backend
     amount, currency, counterparty, counterparty_iban, purpose,
     dedupe_key (unique), status, expense_id (nullable), fetched_at`.
     Status: `new -> booked | ignored`.
-- Bank code to server URL: start with a small list of known banks plus a
-  manual URL field. No full bank directory.
+- Bank code and FinTS URL are typed in by the user. No built-in bank
+  list: a wrong URL from a list is worse than none.
 - Depot accounts (no balance/transactions operation in the UPD) are
   skipped.
 - Endpoints, all scoped to the current user:

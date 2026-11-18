@@ -58,6 +58,16 @@ export const api = {
 
     getSettings: () => request("/api/settings/"),
     updateSettings: (payload) => request("/api/settings/", json("PATCH", payload)),
+
+    getBank: () => request("/api/bank/"),
+    saveBank: (payload) => request("/api/bank/", json("PUT", payload)),
+    deleteBank: () => request("/api/bank/", { method: "DELETE" }),
+    updateBankAccount: (accountId, payload) => request(`/api/bank/accounts/${accountId}`, json("PATCH", payload)),
+    startBankSync: (payload) => request("/api/bank/sync", json("POST", payload)),
+    continueBankSync: (syncId, payload) => request(`/api/bank/sync/${encodeURIComponent(syncId)}/continue`, json("POST", payload)),
+    cancelBankSync: (syncId) => request(`/api/bank/sync/${encodeURIComponent(syncId)}`, { method: "DELETE" }),
+    getBankTransactions: (status) => request("/api/bank/transactions" + (status ? `?status=${status}` : "")),
+    updateBankTransaction: (txId, payload) => request(`/api/bank/transactions/${txId}`, json("PATCH", payload)),
 };
 
 export function redirectToLogin() {

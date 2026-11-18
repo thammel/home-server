@@ -9,6 +9,7 @@ const ICONS = {
     plus: '<path d="M12 5v14M5 12h14"/>',
     user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>',
     shield: '<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>',
+    bank: '<path d="M3 10l9-6 9 6"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/>',
     logout: '<path d="M15 4h4v16h-4"/><path d="M10 8l-4 4 4 4M6 12h10"/>',
 };
 
@@ -54,6 +55,23 @@ function renderNav(me, appName) {
         ),
     );
     document.body.prepend(header);
+    if (!me.is_admin) addBankLink(header.querySelector(".mainnav"), path);
+}
+
+/** Bank link with a count of transactions to review; only when this user has a bank connected. */
+async function addBankLink(nav, path) {
+    let status;
+    try {
+        status = await api.getBank();
+    } catch {
+        return;
+    }
+    if (!status.enabled || !status.connection) return;
+    const active = path === "/bank";
+    nav.lastElementChild.before(el("a", {
+        href: "/bank", class: active ? "navlink active" : "navlink", "aria-current": active ? "page" : null,
+    }, icon("bank"), el("span", { class: "label" }, "Bank"),
+    status.new_count ? el("span", { class: "badge accent", title: `${status.new_count} to review` }, String(status.new_count)) : null));
 }
 
 /**

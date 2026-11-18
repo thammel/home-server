@@ -42,3 +42,7 @@ LOGIN_WINDOW_SECONDS = _env_int("LOGIN_WINDOW_SECONDS", 15 * 60)
 # Daily SQLite backups into DATA_DIR/backups. 0 disables.
 BACKUP_KEEP = _env_int("BACKUP_KEEP", 14)
 BACKUP_DIR = DATA_DIR / "backups"
+
+# Bank import over FinTS (ADR 0007). Off unless a registered FinTS product ID is set.
+# Free registration: https://www.hbci-zka.de/register/prod_register.htm
+FINTS_PRODUCT_ID = os.environ.get("FINTS_PRODUCT_ID") or None
