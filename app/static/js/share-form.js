@@ -64,6 +64,8 @@ export function createExpenseForm(root, { people, me, categories, expense = null
     const ids = people.map(p => p.id);
     const nameOf = Object.fromEntries(people.map(p => [p.id, p.inactive ? `${p.name} (inactive)` : p.name]));
     const fmt = (amount) => money(amount, expense?.currency);
+    // Only participants can record a personal expense, and only their own (ADR 0005).
+    const canBePersonal = ids.includes(me.id) && (!expense || expense.shares.some(s => s.user_id === me.id));
     const state = expense ? stateFromExpense(expense, people) : {
         payMode: "single",
         payerId: ids.includes(me.id) ? me.id : ids[0],
@@ -72,6 +74,7 @@ export function createExpenseForm(root, { people, me, categories, expense = null
         selected: new Set(people.filter(p => !p.inactive).map(p => p.id)),
         custom: {},
     };
+    state.personal = canBePersonal && !!expense?.personal;
 
     // --- static fields -------------------------------------------------------
     const amount = el("input", {
@@ -95,6 +98,7 @@ export function createExpenseForm(root, { people, me, categories, expense = null
         value: expense?.comment ?? "",
     });
 
+    const scopeSection = el("div", { class: "field-group" });
     const paySection = el("div", { class: "field-group" });
     const splitSection = el("div", { class: "field-group" });
     const summary = el("p", { class: "summary muted", "aria-live": "polite" });
@@ -120,6 +124,16 @@ export function createExpenseForm(root, { people, me, categories, expense = null
             type: "text", inputmode: "decimal", class: "small-amount", placeholder: "0.00",
             "aria-label": label, value: value ?? "", oninput: (e) => { onInput(e.target.value); updateSummary(); },
         });
+    }
+
+    function renderScope() {
+        if (!canBePersonal) return;
+        const pick = (personal) => () => { state.personal = personal; render(); };
+        mount(scopeSection, el("div", { class: "group-head" },
+            el("span", { class: "group-label" }, "For"),
+            el("div", { class: "segmented", "aria-label": "Shared or personal" },
+                chip("Shared", !state.personal, pick(false)),
+                chip("Just me", state.personal, pick(true)))));
     }
 
     function renderPay() {
@@ -183,8 +197,14 @@ export function createExpenseForm(root, { people, me, categories, expense = null
     }
 
     function render() {
-        renderPay();
-        renderSplit();
+        renderScope();
+        if (state.personal) {
+            mount(paySection);
+            mount(splitSection);
+        } else {
+            renderPay();
+            renderSplit();
+        }
         updateSummary();
     }
 
@@ -193,6 +213,9 @@ export function createExpenseForm(root, { people, me, categories, expense = null
     function buildShares() {
         const cost = parseAmount(amount.value);
         if (!(cost > 0)) throw new Error("Enter an amount greater than 0.");
+        if (state.personal) {
+            return { cost, shares: [{ user_id: me.id, share: -cost }, { user_id: me.id, share: cost }] };
+        }
         const costCents = toCents(cost);
         const shares = [];
 
@@ -231,6 +254,10 @@ export function createExpenseForm(root, { people, me, categories, expense = null
     function updateSummary() {
         const cost = parseAmount(amount.value);
         const count = state.selected.size;
+        if (state.personal) {
+            summary.textContent = cost > 0 ? "Only for you. Not shared, nobody owes anything." : "";
+            return;
+        }
         if (!(cost > 0) || count === 0) {
             summary.textContent = "";
             return;
@@ -257,6 +284,7 @@ export function createExpenseForm(root, { people, me, categories, expense = null
         description,
         el("div", { class: "field-group" }, category, categoryChips),
         el("datalist", { id: "category-options" }, categories.map(c => el("option", { value: c }))),
+        scopeSection,
         paySection,
         splitSection,
         summary,

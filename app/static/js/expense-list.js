@@ -28,7 +28,9 @@ export function expenseList(expenses, { nameOf, perspectiveId = null, next = nul
         const href = `/expenses/${e.id}` + (next ? `?next=${encodeURIComponent(next)}` : "");
 
         let side = null;
-        if (perspectiveId != null) {
+        if (e.personal) {
+            side = el("small", { class: "muted" }, "personal");
+        } else if (perspectiveId != null) {
             const net = netFor(e, perspectiveId);
             side = Math.abs(net) < 0.005
                 ? el("small", { class: "muted" }, "even")
@@ -41,7 +43,7 @@ export function expenseList(expenses, { nameOf, perspectiveId = null, next = nul
                     el("span", { class: "title" }, e.description),
                     el("span", { class: "sub" },
                         settlement ? "Payment" : e.category, " · ", formatDate(e.date),
-                        settlement ? null : ` · paid by ${payerNames(e, nameOf)}`),
+                        settlement || e.personal ? null : ` · paid by ${payerNames(e, nameOf)}`),
                 ),
                 el("span", { class: "side" },
                     el("span", { class: "amount" }, money(e.cost, e.currency)),

@@ -99,6 +99,7 @@ class ExpenseRead(BaseModel):
     currency: str
     comment: str | None
     shares: list[ExpenseShareRead]
+    personal: bool
 
     model_config = ConfigDict(from_attributes=True)
 

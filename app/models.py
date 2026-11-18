@@ -31,6 +31,11 @@ class Expense(Base):
 
     shares = relationship("ExpenseShare", back_populates="expense", cascade="all, delete-orphan")
 
+    @property
+    def personal(self) -> bool:
+        """All shares belong to one user (ADR 0005)."""
+        return len({s.user_id for s in self.shares}) == 1
+
 
 class ExpenseShare(Base):
     __tablename__ = "expense_shares"

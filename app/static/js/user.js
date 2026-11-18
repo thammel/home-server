@@ -41,7 +41,7 @@ async function start() {
         overview.hidden = panel !== overview;
         stats.hidden = panel !== stats;
         if (panel === stats && !statsRendered) {
-            renderStats(stats, expenses, userId);
+            renderSpending(stats, expenses, userId);
             statsRendered = true;
         }
     }
@@ -73,6 +73,33 @@ async function start() {
     renderSettlements(settlementsBox,
         settlements.filter(s => s.from_user_id === userId || s.to_user_id === userId),
         { viewerId: isSelf ? me.id : null, onSettled: () => window.location.reload() });
+}
+
+/** Stats with a Total / Shared / Personal switch when the user has personal expenses. */
+function renderSpending(panel, expenses, uid) {
+    if (!expenses.some(e => e.personal)) {
+        renderStats(panel, expenses, uid);
+        return;
+    }
+    const scopes = [["all", "Total"], ["shared", "Shared"], ["personal", "Personal"]];
+    const body = el("div");
+    const chips = scopes.map(([scope, label]) => el("button", {
+        type: "button", class: "chip", onclick: () => show(scope),
+    }, label));
+
+    function show(scope) {
+        chips.forEach((c, i) => {
+            const selected = scopes[i][0] === scope;
+            c.classList.toggle("selected", selected);
+            c.setAttribute("aria-pressed", String(selected));
+        });
+        for (const canvas of body.querySelectorAll("canvas")) Chart.getChart(canvas)?.destroy();
+        const rows = scope === "all" ? expenses : expenses.filter(e => e.personal === (scope === "personal"));
+        renderStats(body, rows, uid);
+    }
+
+    mount(panel, el("div", { class: "segmented", "aria-label": "Which spending" }, chips), body);
+    show("all");
 }
 
 function renderStats(panel, expenses, uid) {

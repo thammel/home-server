@@ -88,7 +88,8 @@ No Alembic. New column → add to model AND append `(table, column, DDL)` to `_C
 **Admin is NOT a user.** Admin is manager/observer, never participant.
 - Backend rejects admins (and inactive users) as share participants in new expenses (`validate_share_users`). Users already in an expense may stay when it's edited (legacy data / deactivated users)
 - Balances/settlements exclude admins and settled inactive users (`_participants` in balances.py). Legacy admin shares still counted so sums stay correct
-- Admin gets full unfiltered views. When adding features that show "your data": admin gets all data
+- Admin gets full unfiltered views of shared data. When adding features that show "your data": admin gets all shared data
+- Exception (ADR 0006): personal data (personal expenses, later bank data) is visible to its owner only, admin included. Admin gets 404 on it
 - Frontend: admin has no "Me" profile, nav shows Admin instead
 
 ## Access control rules
@@ -100,10 +101,11 @@ No Alembic. New column → add to model AND append `(table, column, DDL)` to `_C
 - `GET /api/users/{id}` — admin or self only
 
 **Expenses:**
-- `GET /api/expenses/?user_id=` — admin sees all (optional user filter); non-admin only own (other user_id → 403). Sorted date desc
+- `GET /api/expenses/?user_id=&scope=all|shared|personal` — admin sees all shared (optional user filter); non-admin only own (other user_id → 403). Others' personal expenses never listed. Sorted date desc
 - `GET /api/expenses/categories` — distinct category strings (sorted); same access filter as list
-- `GET /api/expenses/{id}` — admin or any user with share in that expense
-- `PATCH/DELETE /api/expenses/{id}` — admin or any payer (negative share). PATCH validates everything before mutating (no partial writes); all fields optional
+- `GET /api/expenses/{id}` — admin or any user with share in that expense; someone else's personal expense → 404
+- `PATCH/DELETE /api/expenses/{id}` — admin or any payer (negative share); someone else's personal expense → 404. PATCH validates everything before mutating (no partial writes); all fields optional
+- Personal expense (all shares one user) can only be created/produced by its owner → else 400
 
 **Settings:** GET any user; PATCH admin only. `app_name` (1–40 chars) is injected server-side into every page via `{{APP_NAME}}` placeholder in the HTML (escaped) — never hardcode the app name; nav brand reads `settings.app_name`.
 
@@ -111,6 +113,8 @@ No Alembic. New column → add to model AND append `(table, column, DDL)` to `_C
 Signed floats, rounded to cents on input. Negative = payer, positive = consumer. Must sum to 0; positive sum = cost, negative sum = -cost.
 
 Expense can have multiple payers, multiple consumers. Single user can appear multiple times in shares (e.g., pays some, consumes some).
+
+Personal expense (ADR 0005) = all shares belong to one user, e.g. `[(me, -x), (me, +x)]`. Derived, not stored; `ExpenseRead.personal`. Balance unaffected; counts in the user's consumed share (stats).
 
 Settle-up payment = expense with category `Settlement`, payer −amount, receiver +amount. Stats/lists treat category `settlement` (case-insensitive) as payment, not spending.
 

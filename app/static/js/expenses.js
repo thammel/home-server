@@ -4,7 +4,7 @@ import { boot, showFatal } from "./layout.js";
 import { consumedBy, expenseList, payerNames } from "./expense-list.js";
 import { $, el, isSettlement, money, mount } from "./ui.js";
 
-const state = { q: "", category: "", month: "", person: "", payments: false };
+const state = { q: "", category: "", month: "", person: "", scope: "", payments: false };
 
 async function start() {
     const { me } = await boot();
@@ -40,6 +40,8 @@ async function start() {
             select("category", "All categories", categories.map(c => [c, c])),
             select("month", "All months", months.map(m => [m, monthLabel(m)])),
             me.is_admin ? select("person", "Everyone", people.map(u => [String(u.id), u.name])) : null,
+            // Admins never receive personal expenses (ADR 0006), so the filter would be empty for them.
+            me.is_admin ? null : select("scope", "All types", [["shared", "Shared"], ["personal", "Personal"]]),
             el("label", { class: "inline-check" },
                 el("input", { type: "checkbox", role: "switch", onchange: (e) => { state.payments = e.target.checked; update(); } }),
                 "Show payments"),
@@ -54,6 +56,7 @@ async function start() {
             (!state.category || e.category === state.category) &&
             (!state.month || e.date.startsWith(state.month)) &&
             (!state.person || e.shares.some(s => s.user_id === Number(state.person))) &&
+            (!state.scope || e.personal === (state.scope === "personal")) &&
             (!state.q || `${e.description} ${e.category} ${e.comment ?? ""}`.toLowerCase().includes(state.q)));
     }
 
@@ -75,12 +78,12 @@ async function start() {
 
 function exportCsv(rows, nameOf, me) {
     const header = ["Date", "Description", "Category", "Amount", "Currency", "Paid by", "Shared by", "Comment"];
-    if (!me.is_admin) header.push("Your share");
+    if (!me.is_admin) header.push("Personal", "Your share");
     const lines = [header, ...rows.map(e => {
         const consumers = [...new Set(e.shares.filter(s => s.share > 0).map(s => nameOf[s.user_id] ?? s.user_id))];
         const line = [e.date, e.description, e.category, e.cost.toFixed(2), e.currency,
             payerNames(e, nameOf), consumers.join(", "), e.comment ?? ""];
-        if (!me.is_admin) line.push(consumedBy(e, me.id).toFixed(2));
+        if (!me.is_admin) line.push(e.personal ? "yes" : "no", consumedBy(e, me.id).toFixed(2));
         return line;
     })];
     const csv = lines.map(l => l.map(csvCell).join(",")).join("\r\n");
