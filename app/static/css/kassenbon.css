@@ -1,0 +1,146 @@
+/* "Kassenbon" theme: balances and expenses read like a till receipt.
+   Loaded after style.css and only overrides it. */
+
+:root:not([data-theme=dark]) {
+    --page: #d5d8d2;
+    --surface: #ffffff;
+    --ink: #1a1a1a;
+    --ink-faded: #6b6b66;
+    --pos: #1d6b3a;
+    --neg: #c8102e;
+    --pos-soft: transparent;
+    --neg-soft: transparent;
+    --pico-color: var(--ink);
+    --pico-muted-color: var(--ink-faded);
+    --pico-muted-border-color: #e3e3de;
+    --pico-primary: #1a1a1a;
+    --pico-primary-background: #1a1a1a;
+    --pico-primary-border: #1a1a1a;
+    --pico-primary-hover: #000;
+    --pico-primary-hover-background: #000;
+    --pico-primary-hover-border: #000;
+    --pico-primary-focus: rgba(26, 26, 26, 0.12);
+    --pico-secondary: #4a4a46;
+    --pico-secondary-background: #4a4a46;
+    --pico-secondary-border: #8a8a84;
+    --pico-secondary-hover: #1a1a1a;
+    --pico-secondary-hover-background: #1a1a1a;
+    --pico-secondary-hover-border: #1a1a1a;
+    --pico-secondary-focus: rgba(26, 26, 26, 0.12);
+    --pico-secondary-inverse: #ffffff;
+    --receipt-font: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+/* Header = the receipt printer: graphite body, paper slot along the bottom. */
+.topbar {
+    --band: #2a2b28;
+    --band-ink: #f1efe6;
+    --band-faded: #a7a59c;
+    --slot: #0f100e;
+    background: var(--band);
+    border-bottom: none;
+    box-shadow: inset 0 -6px 0 var(--slot);
+}
+.topbar-inner { height: calc(var(--nav-height) + 6px); padding-bottom: 6px; }
+.topbar .brand { color: var(--band-ink); }
+.topbar .nav-account { color: var(--band-ink); }
+.topbar .nav-logout { color: var(--band-faded); }
+.topbar .nav-logout:hover { color: #ff6b73; }
+@media (min-width: 641px) {
+    .topbar .mainnav {
+        --pico-color: var(--band-ink);
+        --pico-muted-color: var(--band-faded);
+        --pico-muted-border-color: rgba(255, 255, 255, 0.08);
+        --pico-primary: var(--band-ink);
+        --pico-primary-focus: rgba(255, 255, 255, 0.12);
+        --pico-primary-background: var(--band-ink);
+        --pico-primary-inverse: var(--band);
+        --pico-primary-hover-background: #ffffff;
+    }
+}
+.brand { font-family: var(--receipt-font); font-weight: 500; letter-spacing: 0.08em; }
+
+/* The receipt: torn zig-zag bottom edge, dashed rule under the total. */
+.hero {
+    --tear: 10px;
+    padding: 2rem 1.5rem calc(2rem + var(--tear));
+    box-shadow: none;
+    border-radius: 0;
+    -webkit-mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% / calc(2 * var(--tear)) 100%;
+    mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% / calc(2 * var(--tear)) 100%;
+}
+.hero.pos, .hero.neg { background: var(--surface); }
+.hero-label { font-family: var(--receipt-font); font-size: 0.85rem; color: var(--ink-faded); }
+.hero-amount {
+    font-family: var(--receipt-font);
+    font-weight: 500;
+    font-size: clamp(2.4rem, 11vw, 3.6rem);
+    letter-spacing: -0.04em;
+    padding-bottom: 0.9rem;
+    border-bottom: 2px dashed var(--pico-muted-border-color);
+}
+
+/* Expense list = receipt lines: dotted leaders, amounts in the printer face. */
+.expense-list { border: none; border-radius: 0; box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08); }
+.expense-list li + li { border-top: 1px dashed var(--pico-muted-border-color); }
+.expense-list .title { font-weight: 500; }
+.expense-list .side { font-family: var(--receipt-font); }
+.expense-list .amount { font-weight: 500; }
+
+.settlements li { border: none; border-left: none; border-radius: 0; font-family: var(--receipt-font); font-size: 0.95rem; }
+.settlements li.neg { box-shadow: inset 4px 0 0 var(--neg); }
+.settlements li.pos { box-shadow: inset 4px 0 0 var(--pos); }
+
+article { border-radius: 0; box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08); }
+.amount-input { font-family: var(--receipt-font); font-weight: 500; border-style: dashed; }
+.chip { font-family: var(--receipt-font); font-size: 0.8rem; }
+.link-button { text-decoration: underline; text-underline-offset: 0.2em; }
+
+/* Dark: the receipt after closing time. Charcoal paper, ink stays warm off-white, primary flips to light. */
+@media only screen and (prefers-color-scheme: dark) {
+    :root:not([data-theme]) {
+        --page: #2b2c29;
+        --surface: #1c1d1b;
+        --ink: #ecebe4;
+        --ink-faded: #9c9b93;
+        --pos: #6cc58f;
+        --neg: #ff6b73;
+        --pos-soft: transparent;
+        --neg-soft: transparent;
+        --pico-background-color: var(--page);
+        --pico-color: var(--ink);
+        --pico-h1-color: var(--ink);
+        --pico-h2-color: var(--ink);
+        --pico-h3-color: var(--ink);
+        --pico-muted-color: var(--ink-faded);
+        --pico-muted-border-color: #3a3b37;
+        --pico-form-element-background-color: #232421;
+        --pico-form-element-border-color: #44453f;
+        --pico-form-element-color: var(--ink);
+        --pico-form-element-active-background-color: #262723;
+        --pico-form-element-active-border-color: var(--ink);
+        --pico-form-element-focus-color: rgba(236, 235, 228, 0.18);
+        --pico-form-element-placeholder-color: var(--ink-faded);
+        --pico-primary: #ecebe4;
+        --pico-primary-background: #ecebe4;
+        --pico-primary-border: #ecebe4;
+        --pico-primary-inverse: #1c1d1b;
+        --pico-primary-hover: #ffffff;
+        --pico-primary-hover-background: #ffffff;
+        --pico-primary-hover-border: #ffffff;
+        --pico-primary-underline: rgba(236, 235, 228, 0.5);
+        --pico-primary-focus: rgba(236, 235, 228, 0.18);
+        --accent: #ecebe4;
+        --pico-secondary: #c9c7bf;
+        --pico-secondary-background: #4a4b46;
+        --pico-secondary-border: #6a6b65;
+        --pico-secondary-hover: #ecebe4;
+        --pico-secondary-hover-background: #5a5b55;
+        --pico-secondary-hover-border: #ecebe4;
+        --pico-secondary-focus: rgba(236, 235, 228, 0.18);
+        --pico-secondary-inverse: #ecebe4;
+    }
+    :root:not([data-theme]) .topbar { --band: #141513; --slot: #000000; }
+    :root:not([data-theme]) article,
+    :root:not([data-theme]) .expense-list { box-shadow: 0 1px 0 rgba(0, 0, 0, 0.4); }
+}
