@@ -46,8 +46,14 @@ Local dev env (Linux) uses uv: `uv venv --python 3.13 && uv pip install -e '.[de
 - The production `expenses.db` is real data. Never delete, overwrite or run migrations against it without the user's explicit go-ahead.
 - Migrations run automatically on startup (see Schema changes), so the next restart after a schema change migrates the production DB. Back it up first.
 
+## Decisions
+- Load-bearing choices are recorded as ADRs in `docs/decisions/` and listed at session start.
+- Before changing how the project does something, use the `decision-record` skill: follow an existing ADR, or tell the user when new work contradicts one. Never leave code and ADR disagreeing.
+- `/adr <topic>` records a decision, `/reassess` checks all ADRs against the code.
+- ADRs are public. Decisions about the user's own server go into `CLAUDE.local.md`.
+
 ## Claude Code hooks (`.claude/`)
-- SessionStart: prints branch, status, recent commits.
+- SessionStart: prints branch, status, recent commits, recorded decisions.
 - PreToolUse(Bash): `guard.py` blocks deleting `*.db`, force-push, `git reset --hard`, destructive ssh commands.
 - PostToolUse(Write|Edit): ruff format + fix on the edited `.py` file.
 - Stop: runs `pytest -q -x` when `app/` or `tests/` Python files changed; failures block stopping.
