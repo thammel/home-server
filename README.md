@@ -12,6 +12,8 @@ Small self-hosted app to track shared flat expenses and settle up. FastAPI + SQL
 - Session cookies (httponly, 30-day rolling), login throttling, security headers (CSP)
 - Daily automatic SQLite backups, health check, auto-restart in Docker
 - Mobile-first UI with bottom tab bar, light/dark mode
+- **Personal expenses**: track your own spending next to the shared one; private to you, admins included
+- **Bank import** (optional, German banks via FinTS): sync with your PIN, then go through new transactions one by one
 
 Admin is a manager role, not a flatmate: admins never take part in expenses or balances.
 
@@ -100,8 +102,21 @@ All settings are environment variables (see `.env.example`):
 | `LOGIN_MAX_FAILURES` / `LOGIN_WINDOW_SECONDS` | `5` / `900` | Login throttling |
 | `DATA_DIR` | project root (`/data` in Docker) | Where `expenses.db` and `backups/` live |
 | `DATABASE_URL` | `sqlite:///$DATA_DIR/expenses.db` | Override the database location |
+| `FINTS_PRODUCT_ID` | – | Turns on the bank import (see below) |
 
 App name, currency and settlement mode are set in the app under **Admin → Settings**.
+
+## Bank import (FinTS)
+
+FinTS (formerly HBCI) is the standard online banking interface of German banks. The app uses it to fetch your account transactions, so you do not type every card payment by hand.
+
+1. Register a product ID with Die Deutsche Kreditwirtschaft ([form](https://www.hbci-zka.de/register/prod_register.htm), free, takes a few days). Banks refuse unregistered clients.
+2. Set `FINTS_PRODUCT_ID` in `.env` and restart. Without it the bank import stays hidden.
+3. As a flatmate, open **Account settings → Bank account** and enter your bank code (BLZ), your bank's FinTS URL and your online banking username (not the PIN). Your bank publishes the URL, for example `https://fints.ing.de/fints/` for ING. After the first sync, switch off accounts you do not want (e.g. savings).
+4. On the **Bank** page, enter your PIN and sync. Approve in your banking app if the bank asks.
+5. Go through the new transactions: record each as a personal or a shared expense, or ignore it.
+
+The PIN is used for one sync only and is never stored or logged. Incoming money goes straight to the ignored list. Transactions and connection details are visible to their owner only, admins included. Admins cannot use the bank import.
 
 ## Local development
 
