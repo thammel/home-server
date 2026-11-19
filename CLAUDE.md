@@ -41,7 +41,8 @@ Local dev env (Linux) uses uv: `uv venv --python 3.13 && uv pip install -e '.[de
 
 ## Deployment
 - Host-specific details (server, paths, service, proxy) live in `CLAUDE.local.md` (gitignored). Never copy them into tracked files, commits or PR text: the repo is public.
-- Merging to `main` = shipping to production on the next pull + restart.
+- Releases are tags (ADR 0008). The server runs a release tag, not the tip of `main`. Merging a feature PR does not ship it; merging the release PR does.
+- Migrations run on the first restart after checking out a new tag. Back up the DB before.
 - Never change files on the server directly. Every change goes through git.
 - The production `expenses.db` is real data. Never delete, overwrite or run migrations against it without the user's explicit go-ahead.
 - Migrations run automatically on startup (see Schema changes), so the next restart after a schema change migrates the production DB. Back it up first.
@@ -156,6 +157,13 @@ Two fixtures: `client` (admin session), `non_admin_client` (regular user "TestUs
 - Never write comments that restate the code, narrate your changes, or address the reader (e.g. "# Added error handling", "# Updated to use new API").
 - Don't leave comments about what was removed or changed. That belongs in the commit, not the code.
 - Keep docstrings for public APIs short: one line summary, then params/returns only if non-obvious.
+
+## Releases
+- release-please (`.github/workflows/release.yml`) keeps a release PR open on `main`. It bumps `version` in `pyproject.toml` and writes `CHANGELOG.md` from Conventional Commits.
+- Merging the release PR tags `vX.Y.Z` and publishes a GitHub Release. Never edit `CHANGELOG.md`, the version or `.release-please-manifest.json` by hand.
+- Version bump comes from commit types: `fix` patch, `feat` minor, `type!:` or `BREAKING CHANGE:` footer major. PR squash titles must be Conventional Commits too.
+- The same workflow pushes the image `ghcr.io/thammel/home-server` (`X.Y.Z`, `X.Y`, `latest`; amd64 + arm64). `docker-compose.release.yml` runs it without a checkout.
+- Deploy: fetch tags, check out the release tag, restart. Rollback: check out the previous tag, restart (schema changes are additive, ADR 0002, so older code runs on a newer DB).
 
 ## Commit messages
 Enforced by the git `commit-msg` hook (install: `ln -s ../../.claude/hooks/commit_msg.py .git/hooks/commit-msg`).
