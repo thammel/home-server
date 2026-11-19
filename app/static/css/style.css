@@ -150,17 +150,44 @@ article.message.notice { border-left-color: var(--accent); }
 .navlink {
     display: flex;
     align-items: center;
-    gap: 0.35rem;
     padding: 0.4rem 0.7rem;
     border-radius: var(--pico-border-radius);
     text-decoration: none;
     color: var(--pico-muted-color);
     font-size: 0.9rem;
+    white-space: nowrap;
+    transition: background-color 0.2s, color 0.2s;
+}
+/* Only the current page names itself; the others collapse to their icon (text stays readable to screen readers). */
+.navlink .label {
+    display: inline-block;
+    max-width: 0;
+    margin-left: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition: max-width 0.25s ease, margin-left 0.25s ease, opacity 0.2s ease;
+}
+.navlink.active .label {
+    max-width: 7rem;
+    margin-left: 0.35rem;
+    opacity: 1;
+    animation: label-in 0.35s ease both;
+}
+@keyframes label-in {
+    from { max-width: 0; margin-left: 0; opacity: 0; }
+}
+@media (hover: hover) {
+    .navlink:hover .label { max-width: 7rem; margin-left: 0.35rem; opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .navlink, .navlink .label { transition: none; animation: none; }
 }
 .navlink:hover { color: var(--pico-color); background: var(--pico-muted-border-color); }
 .navlink.active { color: var(--pico-primary); background: var(--pico-primary-focus); }
 .navlink.primary { color: var(--pico-primary-inverse); background: var(--pico-primary-background); }
 .navlink.primary:hover { background: var(--pico-primary-hover-background); }
+/* Desktop adds from the dashboard's "+ Add expense"; the tab only earns its place in the mobile bar. */
+@media (min-width: 641px) { .navlink.primary { display: none; } }
 .icon { display: inline-flex; width: 1.15rem; height: 1.15rem; }
 .icon svg { width: 100%; height: 100%; }
 .nav-right { display: flex; align-items: center; gap: 0.5rem; }
@@ -175,20 +202,75 @@ article.message.notice { border-left-color: var(--accent); }
 
 @media (max-width: 640px) {
     .mainnav {
+        /* Accent tint: stands apart from both the bar and the page background, light and dark. */
+        --add-box: color-mix(in srgb, var(--surface) 85%, var(--accent));
         position: fixed;
         left: 0; right: 0; bottom: 0;
         height: calc(var(--tabbar-height) + env(safe-area-inset-bottom));
         padding: 0.35rem 0.5rem env(safe-area-inset-bottom);
         background: var(--surface);
         border-top: 1px solid var(--pico-muted-border-color);
-        justify-content: space-around;
+        display: grid;
+        /* minmax(0, …): the open tab's wider pill must not widen its column and push the other icons. */
+        grid-template-columns: repeat(2, minmax(0, 1fr)) 6.5rem repeat(2, minmax(0, 1fr));
+        align-items: center;
+        gap: 0;
         z-index: 10;
     }
-    .navlink { flex-direction: column; gap: 0.1rem; font-size: 0.7rem; padding: 0.35rem 0.6rem; }
+    /* Raised box behind Add; covers the bar's top border so both read as one shape. */
+    .mainnav::before {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: -1.6rem;
+        bottom: calc(0.35rem + env(safe-area-inset-bottom));
+        width: 5.25rem;
+        transform: translateX(-50%);
+        background: var(--add-box);
+        border: 1px solid var(--pico-muted-border-color);
+        border-radius: 1rem;
+    }
+    /* Add stays centred when only one link sits to its right (no Bank tab). */
+    .mainnav > .navlink:nth-child(4):last-child { grid-column: 4 / span 2; }
+    /* Text under the icon: a name next to it does not fit a fifth of a phone width.
+       Every label keeps its height, so the icons stay put; only the open tab's text is visible. */
+    .navlink {
+        flex-direction: column;
+        justify-self: center;
+        justify-content: center;
+        font-size: 0.7rem;
+        padding: 0.3rem 0.5rem;
+        border-radius: 0.75rem;
+    }
+    .navlink .label,
+    .navlink.active .label {
+        max-width: none;
+        margin: 0.1rem 0 0;
+        line-height: 1.1;
+    }
+    .navlink .label { transform: translateY(-0.3rem); transition: opacity 0.2s ease, transform 0.25s ease; }
+    .navlink.active .label { transform: none; animation-name: label-down; }
+    @keyframes label-down {
+        from { opacity: 0; transform: translateY(-0.3rem); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .navlink .label, .navlink.active .label { transition: none; animation: none; }
+    }
     .navlink .icon { width: 1.4rem; height: 1.4rem; }
-    .navlink.primary { border-radius: 999px; padding: 0.55rem; align-self: center; }
+    .navlink.primary {
+        grid-column: 3;
+        justify-self: center;
+        position: relative;
+        z-index: 1;
+        width: 3.75rem; height: 3.75rem;
+        padding: 0;
+        border-radius: 999px;
+        border: 4px solid var(--add-box);
+        transform: translateY(-1.1rem);
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.18);
+    }
     .navlink.primary .label { display: none; }
-    .navlink.primary .icon { width: 1.6rem; height: 1.6rem; }
+    .navlink.primary .icon { width: 1.8rem; height: 1.8rem; }
     .topbar-inner { justify-content: space-between; }
     main.container { padding-bottom: calc(var(--tabbar-height) + 2.5rem); }
     #toast { bottom: calc(var(--tabbar-height) + 1rem); }
