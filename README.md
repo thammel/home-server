@@ -27,6 +27,19 @@ docker compose up -d --build
 
 Open `http://<server-ip>:8000` and log in as `admin` / `changeme` (or your `ADMIN_PASSWORD`). Without `ADMIN_PASSWORD` you must pick a new password at first login. Then add flatmates under **Admin**.
 
+### Without the source: published image
+
+Every release pushes an image to `ghcr.io/thammel/home-server` (amd64 and arm64). Only the compose file and a `.env` are needed:
+
+```bash
+mkdir flat-expenses && cd flat-expenses
+curl -fsSLO https://raw.githubusercontent.com/thammel/home-server/main/docker-compose.release.yml
+curl -fsSL https://raw.githubusercontent.com/thammel/home-server/main/.env.example -o .env
+docker compose -f docker-compose.release.yml up -d
+```
+
+Update: `docker compose -f docker-compose.release.yml pull && docker compose -f docker-compose.release.yml up -d`. To stay on one version, set `APP_VERSION=1.2.0` in `.env`; the default is `latest`. Tags: `X.Y.Z`, `X.Y`, `latest`.
+
 The container:
 - restarts automatically after crashes and server reboots (`restart: unless-stopped`)
 - reports its state via a health check (`docker ps` shows `healthy`)
