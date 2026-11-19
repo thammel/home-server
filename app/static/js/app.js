@@ -75,7 +75,7 @@ async function renderDashboard({ me }) {
             el("div", { class: "section-head" },
                 el("h2", {}, "Recent"),
                 el("a", { href: "/expenses" }, "All expenses →")),
-            expenseList(expenses.slice(0, 6), { nameOf, perspectiveId: me.is_admin ? null : me.id })),
+            expenseList(expenses.filter(e => !e.personal).slice(0, 6), { nameOf, perspectiveId: me.is_admin ? null : me.id })),
     );
     renderSettlements(settlementsBox, settlements, {
         viewerId: me.is_admin ? null : me.id,

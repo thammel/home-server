@@ -729,3 +729,131 @@ def test_real_app_boots_seeds_admin_and_serves_pages():
         assert "{{APP_NAME}}" not in page
         assert "Expenses · Casa" in c.get("/expenses").text
         c.patch("/api/settings/", json={"app_name": "Flat Expenses"})
+
+
+# --- personal expenses (ADR 0005, 0006) ----------------------------------------
+
+
+@pytest.fixture()
+def flat():
+    """Admin and two flatmates on one DB, each with their own client."""
+    session_factory = _make_db()
+    db = session_factory()
+    people = [
+        models.User(
+            name="TestAdmin", password_hash=hash_password("testpass"), is_admin=True
+        ),
+        models.User(name="Anna", password_hash=hash_password("testpass")),
+        models.User(name="Ben", password_hash=hash_password("testpass")),
+    ]
+    db.add_all(people)
+    db.commit()
+    ids = {u.name: u.id for u in people}
+    db.close()
+    with (
+        TestClient(_make_app(session_factory, ids["TestAdmin"])) as admin,
+        TestClient(_make_app(session_factory, ids["Anna"])) as anna,
+        TestClient(_make_app(session_factory, ids["Ben"])) as ben,
+    ):
+        yield {"admin": admin, "anna": anna, "ben": ben, "ids": ids}
+
+
+def test_personal_expense_leaves_balances_unchanged(flat):
+    anna, ben = flat["ids"]["Anna"], flat["ids"]["Ben"]
+    post_expense(flat["anna"], [(anna, -10), (ben, 10)])
+    res = post_expense(flat["anna"], [(anna, -12.5), (anna, 12.5)])
+    assert res.status_code == 201
+    assert res.json()["personal"] is True
+    assert balances_by_name(flat["anna"]) == {"Anna": 10.0, "Ben": -10.0}
+
+
+def test_mixed_purchase_is_shared(flat):
+    anna, ben = flat["ids"]["Anna"], flat["ids"]["Ben"]
+    res = post_expense(flat["anna"], [(anna, -50), (anna, 35), (ben, 15)])
+    assert res.json()["personal"] is False
+    assert balances_by_name(flat["anna"]) == {"Anna": 15.0, "Ben": -15.0}
+
+
+def test_personal_expense_hidden_from_admin_and_flatmates(flat):
+    anna = flat["ids"]["Anna"]
+    expense_id = post_expense(
+        flat["anna"], [(anna, -8), (anna, 8)], category="Hobby"
+    ).json()["id"]
+    assert [e["id"] for e in flat["anna"].get("/api/expenses/").json()] == [expense_id]
+    assert "Hobby" in flat["anna"].get("/api/expenses/categories").json()
+
+    admin = flat["admin"]
+    assert admin.get("/api/expenses/").json() == []
+    assert admin.get(f"/api/expenses/?user_id={anna}").json() == []
+    assert "Hobby" not in admin.get("/api/expenses/categories").json()
+    for client in (admin, flat["ben"]):
+        assert client.get(f"/api/expenses/{expense_id}").status_code == 404
+        assert (
+            client.patch(
+                f"/api/expenses/{expense_id}", json={"description": "x"}
+            ).status_code
+            == 404
+        )
+        assert client.delete(f"/api/expenses/{expense_id}").status_code == 404
+    assert flat["anna"].get(f"/api/expenses/{expense_id}").status_code == 200
+
+
+def test_admin_still_sees_shared_expenses(flat):
+    anna, ben = flat["ids"]["Anna"], flat["ids"]["Ben"]
+    post_expense(flat["anna"], [(anna, -10), (ben, 10)])
+    assert len(flat["admin"].get("/api/expenses/").json()) == 1
+
+
+def test_nobody_records_a_personal_expense_for_someone_else(flat):
+    anna, ben = flat["ids"]["Anna"], flat["ids"]["Ben"]
+    assert post_expense(flat["admin"], [(anna, -5), (anna, 5)]).status_code == 400
+    assert post_expense(flat["ben"], [(anna, -5), (anna, 5)]).status_code == 400
+
+    shared = post_expense(flat["anna"], [(anna, -10), (ben, 10)]).json()["id"]
+    only_ben = {
+        "shares": [{"user_id": ben, "share": -10}, {"user_id": ben, "share": 10}]
+    }
+    assert (
+        flat["anna"].patch(f"/api/expenses/{shared}", json=only_ben).status_code == 400
+    )
+    assert (
+        flat["admin"].patch(f"/api/expenses/{shared}", json=only_ben).status_code == 400
+    )
+
+
+def test_expense_turns_shared_and_back_to_personal(flat):
+    anna, ben = flat["ids"]["Anna"], flat["ids"]["Ben"]
+    expense_id = post_expense(flat["anna"], [(anna, -10), (anna, 10)]).json()["id"]
+    shared = {
+        "shares": [{"user_id": anna, "share": -10}, {"user_id": ben, "share": 10}]
+    }
+    res = flat["anna"].patch(f"/api/expenses/{expense_id}", json=shared)
+    assert res.json()["personal"] is False
+    assert flat["admin"].get(f"/api/expenses/{expense_id}").status_code == 200
+
+    personal = {
+        "shares": [{"user_id": anna, "share": -10}, {"user_id": anna, "share": 10}]
+    }
+    assert (
+        flat["anna"]
+        .patch(f"/api/expenses/{expense_id}", json=personal)
+        .json()["personal"]
+        is True
+    )
+    assert flat["admin"].get(f"/api/expenses/{expense_id}").status_code == 404
+
+
+def test_list_expenses_scope_filter(flat):
+    anna, ben = flat["ids"]["Anna"], flat["ids"]["Ben"]
+    shared = post_expense(flat["anna"], [(anna, -10), (ben, 10)]).json()["id"]
+    personal = post_expense(flat["anna"], [(anna, -3), (anna, 3)]).json()["id"]
+
+    def listed(scope):
+        return {
+            e["id"] for e in flat["anna"].get(f"/api/expenses/?scope={scope}").json()
+        }
+
+    assert listed("all") == {shared, personal}
+    assert listed("shared") == {shared}
+    assert listed("personal") == {personal}
+    assert flat["anna"].get("/api/expenses/?scope=bogus").status_code == 422

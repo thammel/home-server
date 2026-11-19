@@ -1,5 +1,7 @@
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app import models, schemas
@@ -47,11 +49,35 @@ def _users_with_open_balance(db: Session) -> set[int]:
     return {user_id for user_id, total in rows if abs(total) >= 0.005}
 
 
-def _get_expense_or_404(db: Session, expense_id: int) -> models.Expense:
+def _personal_expense_ids():
+    return (
+        select(models.ExpenseShare.expense_id)
+        .group_by(models.ExpenseShare.expense_id)
+        .having(func.count(func.distinct(models.ExpenseShare.user_id)) == 1)
+    )
+
+
+def _visible_to(user: models.User):
+    """Filter: everything except other users' personal expenses, for admins too (ADR 0006)."""
+    return or_(
+        models.Expense.id.not_in(_personal_expense_ids()),
+        models.Expense.shares.any(models.ExpenseShare.user_id == user.id),
+    )
+
+
+def _get_expense_or_404(db: Session, expense_id: int, user: models.User) -> models.Expense:
     expense = db.get(models.Expense, expense_id)
-    if not expense:
+    # Someone else's personal expense answers like a missing one, so its existence does not leak.
+    if not expense or (expense.personal and expense.shares[0].user_id != user.id):
         raise HTTPException(status_code=404, detail="Expense not found")
     return expense
+
+
+def validate_personal_owner(shares, user: models.User):
+    """Only the owner may record a personal expense; nobody books one for someone else."""
+    owners = {s.user_id for s in shares}
+    if len(owners) == 1 and owners != {user.id}:
+        raise HTTPException(status_code=400, detail="A personal expense can only be recorded by its owner")
 
 
 def _can_view(user: models.User, expense: models.Expense) -> bool:
@@ -74,6 +100,7 @@ def create_expense(
     # must be able to clear that, or the debt stays open forever.
     allowed = _users_with_open_balance(db) if expense.category.casefold() == "settlement" else set()
     validate_share_users(db, expense.shares, exempt=allowed)
+    validate_personal_owner(expense.shares, _current_user)
 
     db_expense = models.Expense(
         date=expense.date,
@@ -98,7 +125,7 @@ def update_expense(
     db: Session = Depends(get_db),
     _current_user: models.User = Depends(get_current_user),
 ):
-    db_expense = _get_expense_or_404(db, expense_id)
+    db_expense = _get_expense_or_404(db, expense_id, _current_user)
     if not _can_edit(_current_user, db_expense):
         raise HTTPException(status_code=403, detail="Forbidden")
 
@@ -109,6 +136,7 @@ def update_expense(
         validate_shares(new_shares, new_cost)
     if expense.shares is not None:
         validate_share_users(db, expense.shares, exempt={s.user_id for s in db_expense.shares})
+        validate_personal_owner(expense.shares, _current_user)
 
     for field in ("date", "description", "category", "cost", "currency"):
         value = getattr(expense, field)
@@ -127,6 +155,7 @@ def update_expense(
 @router.get("/", response_model=list[schemas.ExpenseRead], responses={403: {"description": "Forbidden"}})
 def list_expenses(
     user_id: int | None = Query(default=None, description="Only expenses this user takes part in"),
+    scope: Literal["all", "shared", "personal"] = Query(default="all", description="Shared, personal or both"),
     db: Session = Depends(get_db),
     _current_user: models.User = Depends(get_current_user),
 ):
@@ -135,7 +164,11 @@ def list_expenses(
             raise HTTPException(status_code=403, detail="Forbidden")
         user_id = _current_user.id
 
-    query = db.query(models.Expense).options(selectinload(models.Expense.shares))
+    query = db.query(models.Expense).options(selectinload(models.Expense.shares)).filter(_visible_to(_current_user))
+    if scope == "shared":
+        query = query.filter(models.Expense.id.not_in(_personal_expense_ids()))
+    elif scope == "personal":
+        query = query.filter(models.Expense.id.in_(_personal_expense_ids()))
     if user_id is not None:
         query = query.filter(models.Expense.shares.any(models.ExpenseShare.user_id == user_id))
     return query.order_by(models.Expense.date.desc(), models.Expense.id.desc()).all()
@@ -146,7 +179,7 @@ def list_categories(
     db: Session = Depends(get_db),
     _current_user: models.User = Depends(get_current_user),
 ):
-    query = db.query(models.Expense.category).distinct()
+    query = db.query(models.Expense.category).distinct().filter(_visible_to(_current_user))
     if not _current_user.is_admin:
         query = query.filter(models.Expense.shares.any(models.ExpenseShare.user_id == _current_user.id))
     return sorted(r[0] for r in query.all() if r[0])
@@ -158,7 +191,7 @@ def get_expense(
     db: Session = Depends(get_db),
     _current_user: models.User = Depends(get_current_user),
 ):
-    expense = _get_expense_or_404(db, expense_id)
+    expense = _get_expense_or_404(db, expense_id, _current_user)
     if not _can_view(_current_user, expense):
         raise HTTPException(status_code=403, detail="Forbidden")
     return expense
@@ -171,7 +204,7 @@ def delete_expense(
     db: Session = Depends(get_db),
     _current_user: models.User = Depends(get_current_user),
 ):
-    expense = _get_expense_or_404(db, expense_id)
+    expense = _get_expense_or_404(db, expense_id, _current_user)
     if not _can_edit(_current_user, expense):
         raise HTTPException(status_code=403, detail="Forbidden")
     db.delete(expense)
