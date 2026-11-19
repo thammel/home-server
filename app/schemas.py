@@ -133,3 +133,85 @@ class SettingsUpdate(BaseModel):
     app_name: AppName | None = None
     settlement_mode: SettlementMode | None = None
     currency: Currency | None = None
+
+
+class BankConnectionWrite(BaseModel):
+    bank_code: str = Field(pattern=r"^\d{8}$", description="German bank code (BLZ)")
+    server_url: str = Field(pattern=r"^https://\S+$", max_length=300, description="The bank's FinTS URL")
+    login_name: str = Field(min_length=1, max_length=100)
+
+
+class BankAccountRead(BaseModel):
+    id: int
+    iban: str
+    name: str
+    enabled: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class BankAccountUpdate(BaseModel):
+    enabled: bool
+
+
+class BankConnectionRead(BaseModel):
+    bank_code: str
+    server_url: str
+    login_name: str
+    last_sync_at: datetime.datetime | None
+    last_error: str | None
+    accounts: list[BankAccountRead]
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class BankStatus(BaseModel):
+    enabled: bool
+    connection: BankConnectionRead | None
+    new_count: int
+    default_since: datetime.date | None
+
+
+class BankSyncStart(BaseModel):
+    # No length or format rules here: a validation error would echo the PIN back.
+    pin: str
+    since: datetime.date | None = None
+
+
+class BankSyncContinue(BaseModel):
+    tan: str = ""
+
+
+class BankSyncResult(BaseModel):
+    status: Literal["done", "approval"]
+    new: int = 0
+    known: int = 0
+    sync_id: str | None = None
+    challenge: str | None = None
+    decoupled: bool | None = None
+
+
+class BankTransactionRead(BaseModel):
+    id: int
+    account_id: int
+    booking_date: datetime.date
+    value_date: datetime.date | None
+    amount: float
+    currency: str
+    counterparty: str
+    counterparty_iban: str
+    purpose: str
+    status: str
+    expense_id: int | None
+    possible_duplicate_expense_id: int | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class BankCount(BaseModel):
+    count: int
+
+
+class BankTransactionUpdate(BaseModel):
+    status: Literal["new", "ignored"] | None = None
+    expense_id: int | None = None

@@ -207,6 +207,9 @@ def delete_expense(
     expense = _get_expense_or_404(db, expense_id, _current_user)
     if not _can_edit(_current_user, expense):
         raise HTTPException(status_code=403, detail="Forbidden")
+    # Its bank line goes back to the review list instead of pointing at nothing.
+    db.query(models.BankTransaction).filter(models.BankTransaction.expense_id == expense.id).update(
+        {"expense_id": None, "status": "new"})
     db.delete(expense)
     db.commit()
     return None

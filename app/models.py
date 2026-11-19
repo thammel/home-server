@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, Date, DateTime, Boolean
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, Date, DateTime, Boolean, LargeBinary
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -66,3 +66,56 @@ class UserSession(Base):
     expires_at = Column(DateTime(timezone=True), nullable=False)
 
     user = relationship("User", back_populates="sessions")
+
+
+class BankConnection(Base):
+    """A user's FinTS login. Never holds the PIN (ADR 0007)."""
+
+    __tablename__ = "bank_connections"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
+    bank_code = Column(String, nullable=False)
+    server_url = Column(String, nullable=False)
+    login_name = Column(String, nullable=False)
+    # python-fints client state (bank parameters, system ID); no PIN, no account data.
+    fints_state = Column(LargeBinary, nullable=True)
+    tan_mechanism = Column(String, nullable=True)
+    last_sync_at = Column(DateTime(timezone=True), nullable=True)
+    last_error = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+
+    accounts = relationship("BankAccount", back_populates="connection", cascade="all, delete-orphan")
+
+
+class BankAccount(Base):
+    __tablename__ = "bank_accounts"
+
+    id = Column(Integer, primary_key=True)
+    connection_id = Column(Integer, ForeignKey("bank_connections.id"), nullable=False, index=True)
+    iban = Column(String, nullable=False)
+    name = Column(String, nullable=False)
+    enabled = Column(Boolean, nullable=False, default=True)
+
+    connection = relationship("BankConnection", back_populates="accounts")
+    transactions = relationship("BankTransaction", back_populates="account", cascade="all, delete-orphan")
+
+
+class BankTransaction(Base):
+    __tablename__ = "bank_transactions"
+
+    id = Column(Integer, primary_key=True)
+    account_id = Column(Integer, ForeignKey("bank_accounts.id"), nullable=False, index=True)
+    booking_date = Column(Date, nullable=False)
+    value_date = Column(Date, nullable=True)
+    amount = Column(Float, nullable=False)
+    currency = Column(String, nullable=False)
+    counterparty = Column(String, nullable=False, default="")
+    counterparty_iban = Column(String, nullable=False, default="")
+    purpose = Column(String, nullable=False, default="")
+    dedupe_key = Column(String, nullable=False, unique=True)
+    status = Column(String, nullable=False, default="new")
+    expense_id = Column(Integer, ForeignKey("expenses.id", ondelete="SET NULL"), nullable=True)
+    fetched_at = Column(DateTime(timezone=True), nullable=False)
+
+    account = relationship("BankAccount", back_populates="transactions")

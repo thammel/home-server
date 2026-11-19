@@ -1,6 +1,15 @@
 // Expense rows shared by the home page, the expenses page and profiles.
 import { el, formatDate, isSettlement, money } from "./ui.js";
 
+/** Categories by how often they were used, most used first. */
+export function categoriesByUse(expenses, allCategories) {
+    const counts = {};
+    for (const e of expenses) if (!isSettlement(e)) counts[e.category] = (counts[e.category] ?? 0) + 1;
+    return allCategories
+        .filter(c => c.toLowerCase() !== "settlement")
+        .sort((a, b) => (counts[b] ?? 0) - (counts[a] ?? 0) || a.localeCompare(b));
+}
+
 /** Net effect of an expense for one user: >0 they get money back, <0 they owe. */
 export function netFor(expense, userId) {
     return -expense.shares.filter(s => s.user_id === userId).reduce((sum, s) => sum + s.share, 0);

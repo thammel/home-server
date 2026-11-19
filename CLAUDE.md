@@ -47,6 +47,14 @@ Local dev env (Linux) uses uv: `uv venv --python 3.13 && uv pip install -e '.[de
 - The production `expenses.db` is real data. Never delete, overwrite or run migrations against it without the user's explicit go-ahead.
 - Migrations run automatically on startup (see Schema changes), so the next restart after a schema change migrates the production DB. Back it up first.
 
+## How to ask a question
+The user knows the tools but not necessarily every protocol underneath (FinTS, SQLite, CSS cascade). A question they cannot evaluate is a decision waved through, not made.
+- One decision at a time. Ask, wait for the answer, then open the next.
+- Problem first: the real-world situation, what goes wrong if chosen badly, then the options. Never open with a protocol or library name.
+- Say where things stand in two or three lines before asking.
+- Always offer "Not sure, talk me through it" as an option.
+- Affirm what is sound before correcting what is not.
+
 ## Decisions
 - Load-bearing choices are recorded as ADRs in `docs/decisions/` and listed at session start.
 - Before changing how the project does something, use the `decision-record` skill: follow an existing ADR, or tell the user when new work contradicts one. Never leave code and ADR disagreeing.
@@ -67,7 +75,8 @@ Local dev env (Linux) uses uv: `uv venv --python 3.13 && uv pip install -e '.[de
 - `app/auth.py` — bcrypt_sha256 hashing, rolling session, `get_current_user`, `require_admin` deps, cookie helpers, `utcnow()`
 - `app/models.py` — `User` (is_admin, is_active, must_change_password), `Expense`, `ExpenseShare`, `UserSession`, `AppSetting`
 - `app/schemas.py` — Pydantic schemas; validation (name/password lengths, cost > 0, cents rounding, currency code)
-- `app/routers/api/` — `auth` (login throttle), `users`, `expenses`, `balances`, `settings`
+- `app/routers/api/` — `auth` (login throttle), `users`, `expenses`, `balances`, `settings`, `bank`
+- `app/bank/` — bank import (ADR 0007): `fints_backend.py` (only code that talks to the bank; replaced by a fake in tests), `importer.py` (dedupe, default range, duplicate hint), `syncs.py` (syncs waiting for approval, in memory, 5 min)
 - `app/static/js/` — see Frontend below
 - `tests/test_api.py` — all tests; `tests/conftest.py` points DATA_DIR at temp dir
 - `Dockerfile`, `docker-compose.yml`, `.env.example`, `requirements.txt` (pinned runtime deps for image)
@@ -108,6 +117,8 @@ No Alembic. New column → add to model AND append `(table, column, DDL)` to `_C
 - `PATCH/DELETE /api/expenses/{id}` — admin or any payer (negative share); someone else's personal expense → 404. PATCH validates everything before mutating (no partial writes); all fields optional
 - Personal expense (all shares one user) can only be created/produced by its owner → else 400
 
+**Bank (ADR 0007):** off unless `FINTS_PRODUCT_ID` is set. All endpoints scoped to the current user; admin → 403 (`GET /api/bank/` returns `enabled: false`). PIN only in the sync request / parked session, never stored or logged. One sync per user; parked sync expires after 5 min. Deleting an expense puts its bank line back to `new`.
+
 **Settings:** GET any user; PATCH admin only. `app_name` (1–40 chars) is injected server-side into every page via `{{APP_NAME}}` placeholder in the HTML (escaped) — never hardcode the app name; nav brand reads `settings.app_name`.
 
 ## Expense share model
@@ -135,6 +146,7 @@ FastAPI serve HTML skeletons; JS builds UI. Pages (`_PAGES` in main.py):
 - `/users/{id}` → `user.js` (Overview + Stats tabs; stats = user's consumed share by month/quarter, stacked by category)
 - `/users/{id}/settings` → `settings.js` (name, password; forced first-login password change)
 - `/admin` → `admin.js` (users, add flatmate, settings)
+- `/bank` → `bank.js` (sync with PIN + approval step, review new transactions one by one: Personal / Split / Ignore)
 
 Shared modules:
 - `api.js` — single source all API calls; add new endpoints here. Errors carry `.status` and readable `.message` (FastAPI `detail`)

@@ -1,12 +1,12 @@
 # 0007. Bank import uses FinTS with a manual sync, and the PIN is never stored
 
-- **Status:** provisional - pending verification
+- **Status:** accepted (verified 2026-11-19)
 - **Date:** 2026-11-18
 - **Relates to:** `docs/plans/bank-import.md`, ADR 0005, ADR 0006
 
 ## Context
 
-Users want their bank transactions in the app instead of typing every expense. German banks offer FinTS 3.0 (PIN/TAN) for direct access with a registered product ID. FinTS has no long-lived token: every dialog sends the online banking PIN, and that PIN plus a TAN can authorise transfers. A local test with one bank fetched the latest transactions with only the PIN, no app approval. Longer ranges and periodic PSD2 re-authentication can require an approval in the banking app. Whether other banks and later syncs behave the same is not yet verified.
+Users want their bank transactions in the app instead of typing every expense. German banks offer FinTS 3.0 (PIN/TAN) for direct access with a registered product ID. FinTS has no long-lived token: every dialog sends the online banking PIN, and that PIN plus a TAN can authorise transfers. A local test with one bank fetched the latest transactions with only the PIN, no app approval. Longer ranges and periodic PSD2 re-authentication can require an approval in the banking app. On 2026-11-19 the implementation was tested end to end against a real bank account. How often later syncs need an approval is still open (see Revisit when).
 
 ## Decision
 
