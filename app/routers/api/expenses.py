@@ -216,6 +216,8 @@ def delete_expense(
     # Same for a scanned receipt: back to review.
     db.query(models.ReceiptScan).filter(models.ReceiptScan.expense_id == expense.id).update(
         {"expense_id": None, "status": "done"})
+    db.query(models.ReceiptScan).filter(models.ReceiptScan.personal_expense_id == expense.id).update(
+        {"personal_expense_id": None})
     db.delete(expense)
     db.commit()
     return None

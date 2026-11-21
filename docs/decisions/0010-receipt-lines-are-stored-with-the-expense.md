@@ -28,7 +28,10 @@ Lines assigned to a flatmate are visible to everyone who can see the
 expense, since that is how they check their amount. Lines that belong
 only to the payer stay in the expense by default (a restaurant bill is
 no secret). A per-receipt option moves them into a separate personal
-expense (ADR 0005), which only the payer sees (ADR 0006).
+expense (ADR 0005), which only the payer sees (ADR 0006). The scan
+remembers it: when the shared expense is deleted and the receipt is
+saved again, the new save replaces that personal expense, so the
+payer's own items are never counted twice.
 
 The lines are a record of the split, not the source of the shares.
 Shares can still be edited by hand; when they no longer match the

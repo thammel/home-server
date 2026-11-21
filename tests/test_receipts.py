@@ -901,3 +901,137 @@ def test_run_loop_requeues_scan_left_processing_by_an_error(flat, monkeypatch):
     assert run_until_first_sleep(flat, monkeypatch, FakeScanner(result())) == [60]
     assert scan_row(flat, scan_id).status == "queued"
 
+
+@pytest.mark.parametrize(
+    "line_total", [float("nan"), float("inf"), 1e300], ids=["nan", "inf", "huge"]
+)
+def test_split_rejects_unusable_amounts(flat, line_total):
+    scan_id = done_scan(flat)
+    body = split_body(flat, ("Milk", 1.0, ["Anna"]))
+    body["lines"][0]["line_total"] = line_total
+    # json.dumps writes NaN/Infinity, which the JSON parser accepts as numbers.
+    res = flat["anna"].post(
+        f"/api/receipts/{scan_id}/split",
+        content=json.dumps(body),
+        headers={"Content-Type": "application/json"},
+    )
+    assert res.status_code == 422
+    assert scan_row(flat, scan_id).status == "done"
+
+
+def test_split_twice_is_refused(flat):
+    scan_id = done_scan(flat)
+    body = split_body(flat, ("Milk", 3.0, ["Anna", "Ben"]))
+    assert (
+        flat["anna"].post(f"/api/receipts/{scan_id}/split", json=body).status_code
+        == 201
+    )
+    assert (
+        flat["anna"].post(f"/api/receipts/{scan_id}/split", json=body).status_code
+        == 409
+    )
+    expense_id = expense_for(flat, flat["anna"], "Anna", "Ben")
+    assert (
+        flat["anna"]
+        .post(f"/api/receipts/{scan_id}/accept", json={"expense_id": expense_id})
+        .status_code
+        == 409
+    )
+    with flat["db"]() as db:
+        assert (
+            db.query(models.ReceiptScan).filter_by(expense_id=expense_id).count() == 0
+        )
+
+
+def test_split_again_replaces_the_personal_expense(flat):
+    scan_id = done_scan(flat)
+    body = split_body(
+        flat, ("Milk", 3.0, ["Anna", "Ben"]), ("Chips", 2.0, ["Anna"]), private_own=True
+    )
+    first = flat["anna"].post(f"/api/receipts/{scan_id}/split", json=body).json()
+    shared, personal = sorted(first["expenses"], key=lambda e: e["personal"])
+    assert flat["anna"].delete(f"/api/expenses/{shared['id']}").status_code == 204
+
+    second = flat["anna"].post(f"/api/receipts/{scan_id}/split", json=body)
+    assert second.status_code == 201, second.text
+    assert flat["anna"].get(f"/api/expenses/{personal['id']}").status_code == 404
+    with flat["db"]() as db:
+        assert db.query(models.Expense).count() == 2
+
+
+def test_accept_after_split_replaces_the_personal_expense(flat):
+    scan_id = done_scan(flat)
+    body = split_body(
+        flat, ("Milk", 3.0, ["Anna", "Ben"]), ("Chips", 2.0, ["Anna"]), private_own=True
+    )
+    shared, personal = sorted(
+        flat["anna"]
+        .post(f"/api/receipts/{scan_id}/split", json=body)
+        .json()["expenses"],
+        key=lambda e: e["personal"],
+    )
+    flat["anna"].delete(f"/api/expenses/{shared['id']}")
+    by_hand = expense_for(flat, flat["anna"], "Anna", "Ben", cost=5.0)
+    res = flat["anna"].post(
+        f"/api/receipts/{scan_id}/accept", json={"expense_id": by_hand}
+    )
+    assert res.status_code == 200, res.text
+    assert flat["anna"].get(f"/api/expenses/{personal['id']}").status_code == 404
+
+
+def test_deleting_personal_part_clears_its_link(flat):
+    scan_id = done_scan(flat)
+    body = split_body(
+        flat, ("Milk", 3.0, ["Anna", "Ben"]), ("Chips", 2.0, ["Anna"]), private_own=True
+    )
+    _, personal = sorted(
+        flat["anna"]
+        .post(f"/api/receipts/{scan_id}/split", json=body)
+        .json()["expenses"],
+        key=lambda e: e["personal"],
+    )
+    assert flat["anna"].delete(f"/api/expenses/{personal['id']}").status_code == 204
+    assert scan_row(flat, scan_id).personal_expense_id is None
+
+
+def test_split_names_the_private_group_that_does_not_add_up(flat):
+    scan_id = done_scan(flat)
+    body = split_body(
+        flat,
+        ("Milk", 3.0, ["Anna", "Ben"]),
+        ("Coupon", -1.0, ["Anna"]),
+        private_own=True,
+    )
+    res = flat["anna"].post(f"/api/receipts/{scan_id}/split", json=body)
+    assert res.status_code == 400
+    assert res.json()["detail"].startswith("Your private lines")
+    assert scan_row(flat, scan_id).status == "done"
+
+
+def test_split_rejects_inactive_and_unknown_people(flat):
+    with flat["db"]() as db:
+        carl = models.User(name="Carl", password_hash="x", is_active=False)
+        db.add(carl)
+        db.commit()
+        flat["ids"]["Carl"] = carl.id
+    scan_id = done_scan(flat)
+    for people in (["Carl"], None):
+        body = split_body(flat, ("Milk", 3.0, ["Anna"]))
+        body["lines"][0]["user_ids"] = [flat["ids"]["Carl"]] if people else [9999]
+        res = flat["anna"].post(f"/api/receipts/{scan_id}/split", json=body)
+        assert res.status_code == 400, res.text
+    assert scan_row(flat, scan_id).status == "done"
+
+
+def test_admin_cannot_see_personal_part_of_a_split(flat):
+    scan_id = done_scan(flat)
+    body = split_body(
+        flat, ("Milk", 3.0, ["Anna", "Ben"]), ("Chips", 2.0, ["Anna"]), private_own=True
+    )
+    _, personal = sorted(
+        flat["anna"]
+        .post(f"/api/receipts/{scan_id}/split", json=body)
+        .json()["expenses"],
+        key=lambda e: e["personal"],
+    )
+    assert flat["admin"].get(f"/api/expenses/{personal['id']}").status_code == 404

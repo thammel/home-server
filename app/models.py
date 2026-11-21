@@ -172,3 +172,5 @@ class ReceiptScan(Base):
     attempts = Column(Integer, nullable=False, default=0)
     model = Column(String, nullable=True)
     expense_id = Column(Integer, ForeignKey("expenses.id", ondelete="SET NULL"), nullable=True)
+    # The uploader-only part of a split (ADR 0010); saving the receipt again replaces it.
+    personal_expense_id = Column(Integer, ForeignKey("expenses.id", ondelete="SET NULL"), nullable=True)

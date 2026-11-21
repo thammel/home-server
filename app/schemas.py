@@ -1,7 +1,8 @@
 import datetime
+import math
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, StringConstraints, field_validator
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50)]
 Password = Annotated[str, StringConstraints(min_length=8, max_length=200)]
@@ -301,12 +302,22 @@ class ReceiptAccept(BaseModel):
     expense_id: int
 
 
+def _finite_or_text(value):
+    # The 422 answer echoes the input; NaN or Infinity in it would make that answer a 500.
+    if isinstance(value, float) and not math.isfinite(value):
+        return "not a finite number"
+    return value
+
+
+LineAmount = Annotated[float, BeforeValidator(_finite_or_text), Field(ge=-1_000_000, le=1_000_000)]
+
+
 class ReceiptSplitLine(BaseModel):
     name: ShortText
-    quantity: float = Field(default=1, gt=0)
-    unit_price: float | None = None
+    quantity: Annotated[float, BeforeValidator(_finite_or_text)] = Field(default=1, gt=0, le=1_000_000)
+    unit_price: LineAmount | None = None
     # Negative for discounts.
-    line_total: float
+    line_total: LineAmount
     user_ids: list[int] = Field(min_length=1)
 
     @field_validator("unit_price", "line_total")
