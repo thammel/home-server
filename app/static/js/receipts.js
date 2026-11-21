@@ -53,31 +53,39 @@ async function reloadList() {
 
 function uploadCard() {
     const msg = el("p", { hidden: true });
-    // No `capture`: phones then offer camera and photo library; iOS hands over JPEG.
-    const input = el("input", { type: "file", accept: "image/jpeg,image/png", hidden: true });
-    const button = el("button", { type: "button", onclick: () => input.click() }, "Scan receipt");
-    input.addEventListener("change", async () => {
-        const file = input.files[0];
-        input.value = "";
-        if (!file) return;
-        button.disabled = true;
-        button.setAttribute("aria-busy", "true");
-        try {
-            await api.uploadReceipt(file);
-            toast("Receipt uploaded, reading it now");
-            await reloadList();
-        } catch (err) {
-            msg.hidden = false;
-            msg.className = "message error";
-            msg.textContent = err.message;
-        } finally {
-            button.disabled = false;
-            button.removeAttribute("aria-busy");
-        }
-    });
+    const buttons = [];
+    // Android's photo picker offers no camera without `capture`, and with it no library, so both.
+    const picker = (label, attrs, cls) => {
+        const input = el("input", { type: "file", accept: "image/jpeg,image/png", hidden: true, ...attrs });
+        const button = el("button", { type: "button", class: cls, onclick: () => input.click() }, label);
+        buttons.push(button);
+        input.addEventListener("change", async () => {
+            const file = input.files[0];
+            input.value = "";
+            if (!file) return;
+            buttons.forEach(b => { b.disabled = true; });
+            button.setAttribute("aria-busy", "true");
+            try {
+                await api.uploadReceipt(file);
+                toast("Receipt uploaded, reading it now");
+                await reloadList();
+            } catch (err) {
+                msg.hidden = false;
+                msg.className = "message error";
+                msg.textContent = err.message;
+            } finally {
+                buttons.forEach(b => { b.disabled = false; });
+                button.removeAttribute("aria-busy");
+            }
+        });
+        return [button, input];
+    };
     return el("article", {},
         el("p", {}, "Take a photo of a receipt. The amount, shop and date are read in the background; you check them before anything is saved."),
-        el("div", { class: "actions" }, button), input, msg);
+        el("div", { class: "actions" },
+            picker("Take photo", { capture: "environment" }),
+            picker("Choose photo", {}, "secondary outline")),
+        msg);
 }
 
 function scannerNote(list, waiting) {

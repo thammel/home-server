@@ -98,9 +98,10 @@ Network and security
   before enabling it; flatmates should know receipts leave the house.
 
 ## Phase 3: review UI
-- New page `/receipts` (`receipts.js`): "Scan receipt" upload button
-  (`accept="image/jpeg,image/png"`, no `capture`, so phones offer camera
-  and photo library), then the user's scans by status: ready to review,
+- New page `/receipts` (`receipts.js`): "Take photo" (`capture`, opens
+  the camera) and "Choose photo" (library) buttons, both
+  `accept="image/jpeg,image/png"`; Android's picker shows no camera
+  without `capture`. Then the user's scans by status: ready to review,
   being read, could not be read (try again, enter by hand, delete),
   saved. Polls every 15 s while scans are being read. Says when the
   scanner is offline and when it was last reachable.
