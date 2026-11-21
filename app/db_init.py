@@ -19,12 +19,13 @@ from app.database import Base
 
 log = logging.getLogger("app")
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # (table, column, DDL used for ALTER TABLE ... ADD COLUMN)
 _COLUMN_MIGRATIONS = [
     ("users", "is_active", "BOOLEAN NOT NULL DEFAULT 1"),
     ("users", "must_change_password", "BOOLEAN NOT NULL DEFAULT 0"),
+    ("receipt_scans", "personal_expense_id", "INTEGER REFERENCES expenses(id)"),
 ]
 
 

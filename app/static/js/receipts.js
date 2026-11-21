@@ -3,6 +3,7 @@
 import { api } from "./api.js";
 import { categoriesByUse } from "./expense-list.js";
 import { boot, showFatal } from "./layout.js";
+import { createSplitForm } from "./receipt-split.js";
 import { createExpenseForm } from "./share-form.js";
 import { $, confirmButton, el, formatDate, money, mount, splitEqually, toCents, toast } from "./ui.js";
 
@@ -183,11 +184,12 @@ function prefill(result) {
     };
 }
 
-function renderReview(scan) {
+function renderReview(scan, byLines = scan.result?.items?.length > 0) {
     clearTimeout(pollTimer);
     setScanParam(scan.id);
     window.scrollTo(0, 0);
     const result = scan.result;
+    const canSplit = result?.items?.length > 0;
     const formRoot = el("div");
     const image = el("a", { href: api.receiptImageUrl(scan.id), target: "_blank", rel: "noopener", class: "receipt-photo" },
         el("img", { src: api.receiptImageUrl(scan.id), alt: "Receipt photo" }));
@@ -197,14 +199,18 @@ function renderReview(scan) {
         result?.currency && result.currency !== ctx.currency && el("p", { class: "message notice" },
             `The receipt is in ${result.currency}; the expense is saved in ${ctx.currency}. Convert the amount if needed.`),
     ];
+    const modeSwitch = canSplit && el("div", { class: "chips segmented", role: "group", "aria-label": "How to split" },
+        el("button", { type: "button", class: byLines ? "chip selected" : "chip", onclick: () => byLines || renderReview(scan, true) }, "By lines"),
+        el("button", { type: "button", class: byLines ? "chip" : "chip selected", onclick: () => byLines && renderReview(scan, false) }, "Total only"));
 
     mount(page,
         el("a", { href: "/receipts", class: "back", onclick: (e) => { e.preventDefault(); reloadList(); } }, "← Receipts"),
         el("div", { class: "receipt-review" },
-            el("div", {}, image, itemsTable(result)),
+            el("div", {}, image, !byLines && itemsTable(result)),
             el("article", { class: "form-card" },
                 el("h1", {}, "Check and save"),
                 notes,
+                modeSwitch,
                 formRoot,
                 el("div", { class: "actions bulk-actions" },
                     confirmButton("Discard receipt", "Really discard?", async () => {
@@ -213,7 +219,24 @@ function renderReview(scan) {
                         await reloadList();
                     }, { class: "secondary outline" })))));
 
+    if (byLines) {
+        createSplitForm(formRoot, {
+            people: ctx.people,
+            me: ctx.me,
+            categories: ctx.categories,
+            result,
+            currency: ctx.currency,
+            onSubmit: async (body) => {
+                const { expenses } = await api.splitReceipt(scan.id, body);
+                toast(expenses.length > 1 ? "Saved as shared and personal expense" : "Expense saved");
+                await reloadList();
+            },
+        });
+        return;
+    }
     const expense = prefill(result);
+    // Kept across retries: when linking fails after the expense was created, Save only links again.
+    let savedId = null;
     createExpenseForm(formRoot, {
         people: ctx.people,
         me: ctx.me,
@@ -221,8 +244,8 @@ function renderReview(scan) {
         expense: expense.shares.length ? expense : null,
         submitLabel: "Save expense",
         onSubmit: async (payload) => {
-            const saved = await api.addExpense(payload);
-            await api.acceptReceipt(scan.id, saved.id);
+            savedId ??= (await api.addExpense(payload)).id;
+            await api.acceptReceipt(scan.id, savedId);
             toast("Expense saved");
             await reloadList();
         },

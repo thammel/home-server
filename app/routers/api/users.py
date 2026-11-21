@@ -174,7 +174,10 @@ def delete_user(
     if user.is_admin and user.is_active and _active_admin_count(db) <= 1:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cannot delete the last admin")
     # Deleting shares would break expenses (they must net to zero) and silently erase debts.
-    if db.query(models.ExpenseShare).filter(models.ExpenseShare.user_id == user_id).first():
+    has_shares = db.query(models.ExpenseShare).filter(models.ExpenseShare.user_id == user_id).first()
+    # Receipt lines keep their people even after a hand edit of the shares (ADR 0010).
+    has_lines = db.query(models.ExpenseItemUser).filter(models.ExpenseItemUser.user_id == user_id).first()
+    if has_shares or has_lines:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="User has expenses. Deactivate the user instead.",

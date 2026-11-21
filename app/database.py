@@ -16,6 +16,8 @@ def _sqlite_pragmas(dbapi_connection, _record):
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA synchronous=NORMAL")
     cursor.execute("PRAGMA busy_timeout=5000")
+    # foreign_keys stays off: older databases may hold rows it would reject. Cascades
+    # and SET NULL come from the ORM relationships and the delete endpoints instead.
     cursor.close()
 
 

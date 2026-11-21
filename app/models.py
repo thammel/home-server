@@ -30,6 +30,9 @@ class Expense(Base):
     comment = Column(String, nullable=True)
 
     shares = relationship("ExpenseShare", back_populates="expense", cascade="all, delete-orphan")
+    items = relationship(
+        "ExpenseItem", back_populates="expense", cascade="all, delete-orphan", order_by="ExpenseItem.position"
+    )
 
     @property
     def personal(self) -> bool:
@@ -47,6 +50,37 @@ class ExpenseShare(Base):
 
     expense = relationship("Expense", back_populates="shares")
     user = relationship("User")
+
+
+class ExpenseItem(Base):
+    """A receipt line of an expense (ADR 0010). A record of the split, not the source of the shares."""
+
+    __tablename__ = "expense_items"
+
+    id = Column(Integer, primary_key=True)
+    expense_id = Column(Integer, ForeignKey("expenses.id", ondelete="CASCADE"), nullable=False, index=True)
+    position = Column(Integer, nullable=False)
+    name = Column(String, nullable=False)
+    quantity = Column(Float, nullable=False, default=1)
+    unit_price = Column(Float, nullable=True)
+    # Negative for discounts.
+    line_total = Column(Float, nullable=False)
+
+    expense = relationship("Expense", back_populates="items")
+    users = relationship("ExpenseItemUser", cascade="all, delete-orphan")
+
+    @property
+    def user_ids(self) -> list[int]:
+        return sorted(u.user_id for u in self.users)
+
+
+class ExpenseItemUser(Base):
+    """Who a receipt line belongs to. "Everyone" is stored as the people at save time."""
+
+    __tablename__ = "expense_item_users"
+
+    item_id = Column(Integer, ForeignKey("expense_items.id", ondelete="CASCADE"), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
 
 
 class AppSetting(Base):
@@ -138,3 +172,5 @@ class ReceiptScan(Base):
     attempts = Column(Integer, nullable=False, default=0)
     model = Column(String, nullable=True)
     expense_id = Column(Integer, ForeignKey("expenses.id", ondelete="SET NULL"), nullable=True)
+    # The uploader-only part of a split (ADR 0010); saving the receipt again replaces it.
+    personal_expense_id = Column(Integer, ForeignKey("expenses.id", ondelete="SET NULL"), nullable=True)

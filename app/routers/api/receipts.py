@@ -4,6 +4,7 @@ import io
 import json
 import logging
 import uuid
+from types import SimpleNamespace
 
 import pypdfium2 as pdfium
 from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile, status
@@ -12,8 +13,10 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy.orm import Session
 
 from app import config, models, schemas
+from app.app_settings import get_setting
 from app.auth import get_current_user, get_db, utcnow
-from app.receipts import scanner, worker
+from app.receipts import scanner, split, worker
+from app.routers.api.expenses import validate_share_users
 
 router = APIRouter()
 log = logging.getLogger("app.receipts")
@@ -26,7 +29,11 @@ _MAX_PDF_PAGES = 5
 # Below this the PDF is a scan without a text layer; the photo path reads it instead.
 _MIN_TEXT_CHARS = 20
 # A phone photo is about 12-50 MP; anything far beyond is a decompression bomb.
-Image.MAX_IMAGE_PIXELS = 100_000_000
+_MAX_PIXELS = 60_000_000
+# Unreviewed scans per user; each keeps a photo on disk.
+MAX_OPEN_SCANS = 30
+_OPEN = ("queued", "processing", "done", "failed")
+_REVIEWABLE = ("done", "failed")
 
 
 def _enabled() -> bool:
@@ -69,6 +76,11 @@ def normalise_image(data: bytes) -> bytes:
         with Image.open(io.BytesIO(data)) as image:
             if image.format not in _ACCEPTED_FORMATS:
                 raise HTTPException(status_code=415, detail=_UNSUPPORTED)
+            # Checked before decoding: Pillow's own bomb guard only warns below 2x its limit.
+            if image.width * image.height > _MAX_PIXELS:
+                raise HTTPException(
+                    status_code=413, detail="The photo has too many pixels"
+                )
             # Lets the JPEG decoder skip detail we would scale away anyway; saves memory on small servers.
             image.draft("RGB", (_MAX_SIDE, _MAX_SIDE))
             image = ImageOps.exif_transpose(image)
@@ -149,6 +161,19 @@ def upload(
     db: Session = Depends(get_db),
     user: models.User = Depends(_member),
 ):
+    open_scans = (
+        db.query(models.ReceiptScan)
+        .filter(
+            models.ReceiptScan.uploaded_by == user.id,
+            models.ReceiptScan.status.in_(_OPEN),
+        )
+        .count()
+    )
+    if open_scans >= MAX_OPEN_SCANS:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{MAX_OPEN_SCANS} receipts are waiting. Save or discard some first.",
+        )
     data = file.file.read(config.RECEIPT_MAX_BYTES + 1)
     if len(data) > config.RECEIPT_MAX_BYTES:
         raise HTTPException(status_code=413, detail="The photo is too large")
@@ -160,25 +185,28 @@ def upload(
     config.RECEIPTS_DIR.mkdir(parents=True, exist_ok=True)
     name = f"{uuid.uuid4().hex}.jpg"
     target = config.RECEIPTS_DIR / name
-    written = []
+    files = [target]
     if text is not None:
         # Written before the image so the worker never sees the image without its text.
-        written.append(_write(target.with_suffix(".txt"), text.encode()))
-    written.append(_write(target, jpeg))
-
-    scan = models.ReceiptScan(
-        uploaded_by=user.id,
-        created_at=utcnow(),
-        status="queued",
-        image_name=name,
-        attempts=0,
-    )
-    db.add(scan)
+        files.insert(0, target.with_suffix(".txt"))
     try:
+        if text is not None:
+            # A broken text layer can hold lone surrogates, which UTF-8 cannot encode.
+            _write(files[0], text.encode("utf-8", "replace"))
+        _write(target, jpeg)
+        scan = models.ReceiptScan(
+            uploaded_by=user.id,
+            created_at=utcnow(),
+            status="queued",
+            image_name=name,
+            attempts=0,
+        )
+        db.add(scan)
         db.commit()
     except Exception:
-        for path in written:
+        for path in files:
             path.unlink(missing_ok=True)
+            path.with_suffix(".part").unlink(missing_ok=True)
         raise
     db.refresh(scan)
     return _read(scan)
@@ -213,17 +241,137 @@ def accept(
 ):
     """Link the expense the user saved from this scan."""
     scan = _own_scan(db, user, scan_id)
-    if scan.status not in ("done", "failed"):
-        raise HTTPException(
-            status_code=409, detail="This receipt is not ready for review"
-        )
+    _claim(db, scan)
     expense = db.get(models.Expense, body.expense_id)
     if expense is None or not any(s.user_id == user.id for s in expense.shares):
         raise HTTPException(status_code=404, detail="Expense not found")
-    scan.status = "accepted"
+    _drop_old_personal(db, scan, user)
     scan.expense_id = expense.id
     db.commit()
     return _read(scan)
+
+
+def _claim(db: Session, scan: models.ReceiptScan) -> None:
+    """Mark the scan accepted in one statement, so a second tab or a double tap gets 409.
+
+    Rolled back with the rest of the request when a later check fails.
+    """
+    claimed = (
+        db.query(models.ReceiptScan)
+        .filter(
+            models.ReceiptScan.id == scan.id, models.ReceiptScan.status.in_(_REVIEWABLE)
+        )
+        .update({"status": "accepted"}, synchronize_session=False)
+    )
+    if not claimed:
+        raise HTTPException(
+            status_code=409, detail="This receipt is not ready for review"
+        )
+    db.refresh(scan)
+
+
+def _drop_old_personal(
+    db: Session, scan: models.ReceiptScan, user: models.User
+) -> None:
+    """A receipt saved again replaces the personal expense of its last split (ADR 0010)."""
+    old = (
+        db.get(models.Expense, scan.personal_expense_id)
+        if scan.personal_expense_id
+        else None
+    )
+    if old is not None and old.personal and old.shares[0].user_id == user.id:
+        db.delete(old)
+    scan.personal_expense_id = None
+
+
+def _expense_from_lines(
+    user: models.User,
+    body: schemas.ReceiptSplit,
+    lines: list[schemas.ReceiptSplitLine],
+    currency: str,
+    label: str,
+) -> models.Expense:
+    cents = split.allocate((line.line_total, line.user_ids) for line in lines)
+    total = sum(cents.values())
+    if total <= 0:
+        raise HTTPException(
+            status_code=400, detail=f"{label} must add up to more than zero"
+        )
+    if any(c < 0 for c in cents.values()):
+        raise HTTPException(
+            status_code=400,
+            detail="Someone's lines add up to less than zero. Put each discount on the same people as its item.",
+        )
+    cost = total / 100
+    return models.Expense(
+        date=body.date,
+        description=body.description,
+        category=body.category,
+        cost=cost,
+        currency=currency,
+        comment=body.comment or None,
+        shares=[models.ExpenseShare(user_id=user.id, share=-cost)]
+        + [
+            models.ExpenseShare(user_id=user_id, share=c / 100)
+            for user_id, c in sorted(cents.items())
+            if c
+        ],
+        items=[
+            models.ExpenseItem(
+                position=position,
+                name=line.name,
+                quantity=line.quantity,
+                unit_price=line.unit_price,
+                line_total=line.line_total,
+                users=[
+                    models.ExpenseItemUser(user_id=u)
+                    for u in sorted(set(line.user_ids))
+                ],
+            )
+            for position, line in enumerate(lines)
+        ],
+    )
+
+
+@router.post(
+    "/{scan_id}/split",
+    response_model=schemas.ReceiptSplitResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def split_scan(
+    scan_id: int,
+    body: schemas.ReceiptSplit,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(_member),
+):
+    """Save the scan as an expense split by its lines; the uploader paid (ADR 0010)."""
+    scan = _own_scan(db, user, scan_id)
+    _claim(db, scan)
+    people = {u for line in body.lines for u in line.user_ids}
+    validate_share_users(db, [SimpleNamespace(user_id=u) for u in people])
+
+    own = [line for line in body.lines if set(line.user_ids) == {user.id}]
+    others = [line for line in body.lines if set(line.user_ids) != {user.id}]
+    if body.private_own and own and others:
+        groups = [(own, "Your private lines"), (others, "The shared lines")]
+    else:
+        groups = [(body.lines, "The lines")]
+    currency = get_setting(db, "currency")
+    created = [
+        _expense_from_lines(user, body, lines, currency, label)
+        for lines, label in groups
+    ]
+    _drop_old_personal(db, scan, user)
+    db.add_all(created)
+    db.flush()
+    # The shared expense, when there are two: deleting it puts the receipt back up for review.
+    scan.expense_id = created[-1].id
+    if len(created) == 2:
+        scan.personal_expense_id = created[0].id
+    db.commit()
+    return schemas.ReceiptSplitResult(
+        expenses=[schemas.ExpenseRead.model_validate(e) for e in created]
+    )
 
 
 @router.post("/{scan_id}/retry", response_model=schemas.ReceiptScanRead)

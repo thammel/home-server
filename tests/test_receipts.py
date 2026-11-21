@@ -20,9 +20,9 @@ from sqlalchemy.pool import StaticPool
 from app import config, models
 from app.auth import get_current_user, get_db, hash_password
 from app.database import Base
-from app.receipts import scanner, worker
+from app.receipts import scanner, split, worker
 from app.receipts.scanner import ScanFailed, ScannerUnavailable
-from app.routers.api import expenses, receipts
+from app.routers.api import expenses, receipts, users
 from app.schemas import ReceiptItem, ReceiptResult
 
 _ORIENTATION = 0x0112
@@ -115,6 +115,7 @@ def flat(monkeypatch, tmp_path):
         app = FastAPI()
         app.include_router(receipts.router, prefix="/api/receipts")
         app.include_router(expenses.router, prefix="/api/expenses")
+        app.include_router(users.router, prefix="/api/users")
 
         def override_get_db():
             s = session_factory()
@@ -435,7 +436,7 @@ def test_scanner_sends_openai_compatible_request(flat, monkeypatch):
             '{"shop": "S", "date": "2026-11-20", "currency": "EUR", "total": 2, "items": []}'
         )
     )
-    monkeypatch.setattr(urllib.request, "urlopen", fake)
+    monkeypatch.setattr(scanner._opener, "open", fake)
 
     assert scanner.OpenAICompatibleScanner().scan(b"jpeg").total == 2.0
 
@@ -457,7 +458,7 @@ def test_scanner_sends_pdf_text_as_plain_message(flat, monkeypatch):
             '{"shop": "S", "date": "2026-11-20", "currency": "EUR", "total": 2, "items": []}'
         )
     )
-    monkeypatch.setattr(urllib.request, "urlopen", fake)
+    monkeypatch.setattr(scanner._opener, "open", fake)
 
     scanner.OpenAICompatibleScanner().scan_text("SUMME 2,00")
 
@@ -468,7 +469,7 @@ def test_scanner_sends_pdf_text_as_plain_message(flat, monkeypatch):
 
 def test_scanner_without_key_sends_no_authorization(flat, monkeypatch):
     fake = FakeUrlopen({"data": []})
-    monkeypatch.setattr(urllib.request, "urlopen", fake)
+    monkeypatch.setattr(scanner._opener, "open", fake)
     assert scanner.OpenAICompatibleScanner().reachable() is True
     assert fake.requests[0].full_url == "http://scanner.test/v1/models"
     assert fake.requests[0].get_header("Authorization") is None
@@ -495,7 +496,7 @@ def test_scanner_without_key_sends_no_authorization(flat, monkeypatch):
 def test_scanner_errors_split_into_retry_later_and_attempt_failed(
     flat, monkeypatch, error, expected
 ):
-    monkeypatch.setattr(urllib.request, "urlopen", FakeUrlopen(error=error))
+    monkeypatch.setattr(scanner._opener, "open", FakeUrlopen(error=error))
     with pytest.raises(expected):
         scanner.OpenAICompatibleScanner().scan(b"jpeg")
 
@@ -618,3 +619,419 @@ def test_list_reports_scanner_status(flat, monkeypatch):
     listed = flat["anna"].get("/api/receipts/").json()
     assert listed["scanner_reachable"] is True
     assert listed["scanner_last_reachable_at"] is not None
+
+
+# --- receipt lines (ADR 0010) ---------------------------------------------------
+
+
+def add_line(flat, expense_id, name, line_total, *people):
+    with flat["db"]() as db:
+        position = db.query(models.ExpenseItem).filter_by(expense_id=expense_id).count()
+        item = models.ExpenseItem(
+            expense_id=expense_id, position=position, name=name, line_total=line_total
+        )
+        item.users = [models.ExpenseItemUser(user_id=flat["ids"][p]) for p in people]
+        db.add(item)
+        db.commit()
+        return item.id
+
+
+def test_deleting_expense_deletes_its_lines(flat):
+    expense_id = expense_for(flat, flat["anna"], "Anna", "Ben")
+    add_line(flat, expense_id, "Wine", 6.0, "Anna", "Ben")
+    assert flat["anna"].delete(f"/api/expenses/{expense_id}").status_code == 204
+    with flat["db"]() as db:
+        assert db.query(models.ExpenseItem).count() == 0
+        assert db.query(models.ExpenseItemUser).count() == 0
+
+
+def test_user_named_on_a_line_cannot_be_deleted(flat):
+    with flat["db"]() as db:
+        carl = models.User(name="Carl", password_hash=hash_password("testpass"))
+        db.add(carl)
+        db.commit()
+        flat["ids"]["Carl"] = carl.id
+    expense_id = expense_for(flat, flat["anna"], "Anna", "Ben")
+    add_line(flat, expense_id, "Wine", 6.0, "Carl")
+    assert flat["admin"].delete(f"/api/users/{flat['ids']['Carl']}").status_code == 409
+
+
+def test_allocate_rounds_once_per_person_and_adds_up():
+    assert split.allocate([(10.0, [1, 2, 3])]) == {1: 334, 2: 333, 3: 333}
+    lines = [(1.0, [1, 2, 3]), (1.0, [1, 2, 3]), (1.0, [1, 2, 3])]
+    assert split.allocate(lines) == {1: 100, 2: 100, 3: 100}
+    lines = [(5.0, [1, 2]), (2.5, [2]), (-0.5, [1, 2])]
+    assert split.allocate(lines) == {1: 225, 2: 475}
+
+
+def done_scan(flat, total=6.0, items=((2, 1.5, 3.0), (1, 3.0, 3.0))):
+    scan_id = upload(flat["anna"], photo()).json()["id"]
+    worker.process_next(flat["db"], FakeScanner(result(total=total, items=items)))
+    return scan_id
+
+
+def split_body(flat, *lines, private_own=False):
+    return {
+        "date": "2026-11-20",
+        "description": "Corner Shop",
+        "category": "Groceries",
+        "private_own": private_own,
+        "lines": [
+            {
+                "name": name,
+                "line_total": amount,
+                "user_ids": [flat["ids"][p] for p in people],
+            }
+            for name, amount, people in lines
+        ],
+    }
+
+
+def shares_of(flat, expense):
+    names = {v: k for k, v in flat["ids"].items()}
+    return sorted((names[s["user_id"]], s["share"]) for s in expense["shares"])
+
+
+def test_split_derives_shares_from_lines(flat):
+    scan_id = done_scan(flat)
+    body = split_body(
+        flat,
+        ("Wine", 10.0, ["Anna", "Ben"]),
+        ("Pasta", 8.5, ["Anna"]),
+        ("Pizza", 9.0, ["Ben"]),
+        ("Discount", -1.0, ["Anna", "Ben"]),
+    )
+    res = flat["anna"].post(f"/api/receipts/{scan_id}/split", json=body)
+    assert res.status_code == 201, res.text
+    [expense] = res.json()["expenses"]
+    assert expense["cost"] == 26.5
+    assert shares_of(flat, expense) == [("Anna", -26.5), ("Anna", 13.0), ("Ben", 13.5)]
+
+    scan = flat["anna"].get(f"/api/receipts/{scan_id}").json()
+    assert (scan["status"], scan["expense_id"]) == ("accepted", expense["id"])
+    detail = flat["ben"].get(f"/api/expenses/{expense['id']}").json()
+    assert [i["name"] for i in detail["items"]] == [
+        "Wine",
+        "Pasta",
+        "Pizza",
+        "Discount",
+    ]
+    assert detail["items"][0]["user_ids"] == sorted(
+        [flat["ids"]["Anna"], flat["ids"]["Ben"]]
+    )
+    assert detail["items_match"] is True
+
+
+def test_split_keeps_own_lines_private_when_asked(flat):
+    scan_id = done_scan(flat)
+    body = split_body(
+        flat,
+        ("Milk", 3.0, ["Anna", "Ben"]),
+        ("Chips", 2.0, ["Anna"]),
+        private_own=True,
+    )
+    shared, personal = sorted(
+        flat["anna"]
+        .post(f"/api/receipts/{scan_id}/split", json=body)
+        .json()["expenses"],
+        key=lambda e: e["personal"],
+    )
+    assert shares_of(flat, shared) == [("Anna", -3.0), ("Anna", 1.5), ("Ben", 1.5)]
+    assert personal["personal"] is True
+    assert personal["cost"] == 2.0
+    assert flat["ben"].get(f"/api/expenses/{personal['id']}").status_code == 404
+    assert [
+        i["name"]
+        for i in flat["anna"].get(f"/api/expenses/{personal['id']}").json()["items"]
+    ] == ["Chips"]
+    assert (
+        flat["anna"].get(f"/api/receipts/{scan_id}").json()["expense_id"]
+        == shared["id"]
+    )
+
+
+def test_split_without_own_lines_or_option_is_one_expense(flat):
+    scan_id = done_scan(flat)
+    body = split_body(flat, ("Milk", 3.0, ["Anna", "Ben"]), ("Chips", 2.0, ["Anna"]))
+    [expense] = (
+        flat["anna"]
+        .post(f"/api/receipts/{scan_id}/split", json=body)
+        .json()["expenses"]
+    )
+    assert expense["cost"] == 5.0
+
+
+@pytest.mark.parametrize(
+    ("lines", "detail"),
+    [
+        ((("Refund", -2.0, ["Anna"]),), "more than zero"),
+        ((("Milk", 3.0, ["Anna"]), ("Coupon", -1.0, ["Ben"])), "less than zero"),
+        ((("Milk", 3.0, ["TestAdmin"]),), "cannot take part"),
+    ],
+    ids=["negative-total", "negative-person", "admin"],
+)
+def test_split_rejects_impossible_splits(flat, lines, detail):
+    scan_id = done_scan(flat)
+    res = flat["anna"].post(
+        f"/api/receipts/{scan_id}/split", json=split_body(flat, *lines)
+    )
+    assert res.status_code == 400
+    assert detail in res.json()["detail"]
+    assert scan_row(flat, scan_id).status == "done"
+    with flat["db"]() as db:
+        assert db.query(models.Expense).count() == 0
+
+
+def test_split_refuses_other_users_scan_and_unready_scan(flat):
+    scan_id = done_scan(flat)
+    body = split_body(flat, ("Milk", 3.0, ["Anna"]))
+    assert (
+        flat["ben"].post(f"/api/receipts/{scan_id}/split", json=body).status_code == 404
+    )
+    queued = upload(flat["anna"], photo()).json()["id"]
+    assert (
+        flat["anna"].post(f"/api/receipts/{queued}/split", json=body).status_code == 409
+    )
+
+
+def test_expense_detail_flags_shares_edited_after_split(flat):
+    scan_id = done_scan(flat)
+    body = split_body(flat, ("Milk", 4.0, ["Anna", "Ben"]))
+    [expense] = (
+        flat["anna"]
+        .post(f"/api/receipts/{scan_id}/split", json=body)
+        .json()["expenses"]
+    )
+    anna, ben = flat["ids"]["Anna"], flat["ids"]["Ben"]
+    res = flat["anna"].patch(
+        f"/api/expenses/{expense['id']}",
+        json={
+            "shares": [{"user_id": anna, "share": -4.0}, {"user_id": ben, "share": 4.0}]
+        },
+    )
+    assert res.status_code == 200, res.text
+    detail = flat["anna"].get(f"/api/expenses/{expense['id']}").json()
+    assert detail["items_match"] is False
+    assert len(detail["items"]) == 1
+
+
+def test_expense_without_lines_has_no_match_flag(flat):
+    expense_id = expense_for(flat, flat["anna"], "Anna", "Ben")
+    detail = flat["anna"].get(f"/api/expenses/{expense_id}").json()
+    assert (detail["items"], detail["items_match"]) == ([], None)
+
+
+# --- review fixes: limits, config errors, double saves --------------------------
+
+
+def test_upload_rejects_too_many_pixels_before_decoding(flat):
+    huge = io.BytesIO()
+    Image.new("1", (9000, 9000), 1).save(huge, format="PNG")
+    res = upload(flat["anna"], huge.getvalue(), "r.png", "image/png")
+    assert res.status_code == 413
+    assert not list(flat["dir"].glob("*"))
+
+
+def test_upload_refuses_more_open_scans_than_the_limit(flat, monkeypatch):
+    monkeypatch.setattr(receipts, "MAX_OPEN_SCANS", 2)
+    first = upload(flat["anna"], photo()).json()["id"]
+    upload(flat["anna"], photo())
+    assert upload(flat["anna"], photo()).status_code == 409
+    assert upload(flat["ben"], photo()).status_code == 201
+    set_status(flat, first, "accepted")
+    assert upload(flat["anna"], photo()).status_code == 201
+
+
+def test_upload_leaves_no_files_when_storing_fails(flat, monkeypatch):
+    real_write = receipts._write
+
+    def fail_on_image(target, data):
+        if target.suffix == ".jpg":
+            raise OSError("disk full")
+        return real_write(target, data)
+
+    monkeypatch.setattr(receipts, "_write", fail_on_image)
+    with pytest.raises(OSError):
+        upload(flat["anna"], text_pdf(*RECEIPT_LINES), "r.pdf")
+    assert not list(flat["dir"].glob("*"))
+
+
+@pytest.mark.parametrize("code", [301, 401, 403, 404])
+def test_scanner_config_errors_postpone_without_attempt(flat, monkeypatch, code):
+    error = urllib.error.HTTPError("u", code, "no", {}, io.BytesIO(b""))
+    monkeypatch.setattr(scanner._opener, "open", FakeUrlopen(error=error))
+    scan_id = upload(flat["anna"], photo()).json()["id"]
+    assert worker.process_next(flat["db"], scanner.OpenAICompatibleScanner()) is False
+    scan = scan_row(flat, scan_id)
+    assert (scan.status, scan.attempts) == ("queued", 0)
+
+
+def test_scanner_does_not_follow_redirects():
+    assert not any(
+        type(h) is urllib.request.HTTPRedirectHandler for h in scanner._opener.handlers
+    )
+
+
+@pytest.mark.parametrize(
+    ("error", "reachable"),
+    [
+        (None, True),
+        (urllib.error.HTTPError("u", 404, "no", {}, io.BytesIO(b"")), True),
+        (urllib.error.HTTPError("u", 400, "no", {}, io.BytesIO(b"")), True),
+        (urllib.error.HTTPError("u", 401, "no", {}, io.BytesIO(b"")), False),
+        (urllib.error.HTTPError("u", 503, "no", {}, io.BytesIO(b"")), False),
+        (urllib.error.URLError("refused"), False),
+    ],
+)
+def test_reachable_accepts_any_answer_except_auth_and_outage(
+    flat, monkeypatch, error, reachable
+):
+    monkeypatch.setattr(scanner._opener, "open", FakeUrlopen({"data": []}, error=error))
+    assert scanner.OpenAICompatibleScanner().reachable() is reachable
+
+
+def test_run_loop_requeues_scan_left_processing_by_an_error(flat, monkeypatch):
+    scan_id = upload(flat["anna"], photo()).json()["id"]
+
+    def crash(session_factory, _scanner):
+        set_status(flat, scan_id, "processing")
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(worker, "process_next", crash)
+    assert run_until_first_sleep(flat, monkeypatch, FakeScanner(result())) == [60]
+    assert scan_row(flat, scan_id).status == "queued"
+
+
+@pytest.mark.parametrize(
+    "line_total", [float("nan"), float("inf"), 1e300], ids=["nan", "inf", "huge"]
+)
+def test_split_rejects_unusable_amounts(flat, line_total):
+    scan_id = done_scan(flat)
+    body = split_body(flat, ("Milk", 1.0, ["Anna"]))
+    body["lines"][0]["line_total"] = line_total
+    # json.dumps writes NaN/Infinity, which the JSON parser accepts as numbers.
+    res = flat["anna"].post(
+        f"/api/receipts/{scan_id}/split",
+        content=json.dumps(body),
+        headers={"Content-Type": "application/json"},
+    )
+    assert res.status_code == 422
+    assert scan_row(flat, scan_id).status == "done"
+
+
+def test_split_twice_is_refused(flat):
+    scan_id = done_scan(flat)
+    body = split_body(flat, ("Milk", 3.0, ["Anna", "Ben"]))
+    assert (
+        flat["anna"].post(f"/api/receipts/{scan_id}/split", json=body).status_code
+        == 201
+    )
+    assert (
+        flat["anna"].post(f"/api/receipts/{scan_id}/split", json=body).status_code
+        == 409
+    )
+    expense_id = expense_for(flat, flat["anna"], "Anna", "Ben")
+    assert (
+        flat["anna"]
+        .post(f"/api/receipts/{scan_id}/accept", json={"expense_id": expense_id})
+        .status_code
+        == 409
+    )
+    with flat["db"]() as db:
+        assert (
+            db.query(models.ReceiptScan).filter_by(expense_id=expense_id).count() == 0
+        )
+
+
+def test_split_again_replaces_the_personal_expense(flat):
+    scan_id = done_scan(flat)
+    body = split_body(
+        flat, ("Milk", 3.0, ["Anna", "Ben"]), ("Chips", 2.0, ["Anna"]), private_own=True
+    )
+    first = flat["anna"].post(f"/api/receipts/{scan_id}/split", json=body).json()
+    shared, personal = sorted(first["expenses"], key=lambda e: e["personal"])
+    assert flat["anna"].delete(f"/api/expenses/{shared['id']}").status_code == 204
+
+    second = flat["anna"].post(f"/api/receipts/{scan_id}/split", json=body)
+    assert second.status_code == 201, second.text
+    assert flat["anna"].get(f"/api/expenses/{personal['id']}").status_code == 404
+    with flat["db"]() as db:
+        assert db.query(models.Expense).count() == 2
+
+
+def test_accept_after_split_replaces_the_personal_expense(flat):
+    scan_id = done_scan(flat)
+    body = split_body(
+        flat, ("Milk", 3.0, ["Anna", "Ben"]), ("Chips", 2.0, ["Anna"]), private_own=True
+    )
+    shared, personal = sorted(
+        flat["anna"]
+        .post(f"/api/receipts/{scan_id}/split", json=body)
+        .json()["expenses"],
+        key=lambda e: e["personal"],
+    )
+    flat["anna"].delete(f"/api/expenses/{shared['id']}")
+    by_hand = expense_for(flat, flat["anna"], "Anna", "Ben", cost=5.0)
+    res = flat["anna"].post(
+        f"/api/receipts/{scan_id}/accept", json={"expense_id": by_hand}
+    )
+    assert res.status_code == 200, res.text
+    assert flat["anna"].get(f"/api/expenses/{personal['id']}").status_code == 404
+
+
+def test_deleting_personal_part_clears_its_link(flat):
+    scan_id = done_scan(flat)
+    body = split_body(
+        flat, ("Milk", 3.0, ["Anna", "Ben"]), ("Chips", 2.0, ["Anna"]), private_own=True
+    )
+    _, personal = sorted(
+        flat["anna"]
+        .post(f"/api/receipts/{scan_id}/split", json=body)
+        .json()["expenses"],
+        key=lambda e: e["personal"],
+    )
+    assert flat["anna"].delete(f"/api/expenses/{personal['id']}").status_code == 204
+    assert scan_row(flat, scan_id).personal_expense_id is None
+
+
+def test_split_names_the_private_group_that_does_not_add_up(flat):
+    scan_id = done_scan(flat)
+    body = split_body(
+        flat,
+        ("Milk", 3.0, ["Anna", "Ben"]),
+        ("Coupon", -1.0, ["Anna"]),
+        private_own=True,
+    )
+    res = flat["anna"].post(f"/api/receipts/{scan_id}/split", json=body)
+    assert res.status_code == 400
+    assert res.json()["detail"].startswith("Your private lines")
+    assert scan_row(flat, scan_id).status == "done"
+
+
+def test_split_rejects_inactive_and_unknown_people(flat):
+    with flat["db"]() as db:
+        carl = models.User(name="Carl", password_hash="x", is_active=False)
+        db.add(carl)
+        db.commit()
+        flat["ids"]["Carl"] = carl.id
+    scan_id = done_scan(flat)
+    for people in (["Carl"], None):
+        body = split_body(flat, ("Milk", 3.0, ["Anna"]))
+        body["lines"][0]["user_ids"] = [flat["ids"]["Carl"]] if people else [9999]
+        res = flat["anna"].post(f"/api/receipts/{scan_id}/split", json=body)
+        assert res.status_code == 400, res.text
+    assert scan_row(flat, scan_id).status == "done"
+
+
+def test_admin_cannot_see_personal_part_of_a_split(flat):
+    scan_id = done_scan(flat)
+    body = split_body(
+        flat, ("Milk", 3.0, ["Anna", "Ben"]), ("Chips", 2.0, ["Anna"]), private_own=True
+    )
+    _, personal = sorted(
+        flat["anna"]
+        .post(f"/api/receipts/{scan_id}/split", json=body)
+        .json()["expenses"],
+        key=lambda e: e["personal"],
+    )
+    assert flat["admin"].get(f"/api/expenses/{personal['id']}").status_code == 404

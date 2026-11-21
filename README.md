@@ -146,7 +146,11 @@ Flatmates upload a photo of a receipt or an e-receipt PDF on **Add → Scan rece
 2. Set `RECEIPT_SCANNER_URL` and `RECEIPT_SCANNER_MODEL` (plus `RECEIPT_SCANNER_KEY` if needed) in `.env` and restart.
 3. Uploads wait in a queue while the scanner is offline and are read once it is back. A scan that gets three unusable answers is marked as failed and can be retried or entered by hand.
 
-Photos are turned upright, scaled down and stored without EXIF data (no GPS position). From a PDF only its text and a picture of the first page are kept; the text goes to the model instead of an image. A PDF without text (a scan) is read like a photo. They are sent to the configured URL only. With a hosted service, check where it processes data and tell your flatmates: receipts can show partial card numbers and loyalty numbers. Scans are visible to their uploader only, admins included. Accepted photos stay until you delete them.
+When the receipt has line items, you can split it **by lines**: tap who each line is for (everyone, you, one flatmate, or any group). Each line is split equally within its group and the shares are worked out for you. Lines that are only yours can be kept private: they are then saved as a separate personal expense. The lines stay with the expense and are shown on its page; if someone later edits the shares by hand, the page says that they no longer match.
+
+Photos are turned upright, scaled down and stored without EXIF data (no GPS position). From a PDF only its text and a picture of the first page are kept; the text goes to the model instead of an image. A PDF without text (a scan) is read like a photo. They are sent to the configured URL only. With a hosted service, check where it processes data and tell your flatmates: receipts can show partial card numbers and loyalty numbers. Scans are visible to their uploader only, admins included. Accepted photos stay until you delete them. At most 30 receipts per person can wait for review.
+
+Run the app as one process (no uvicorn `--workers`): each process starts its own scan worker, and two would read the same receipts twice.
 
 ## Local development
 
@@ -192,7 +196,8 @@ All endpoints except `POST /api/auth/login` and `GET /api/health` require a sess
 - `GET /api/receipts/` — `enabled`, own scans, scanner reachability
 - `POST /api/receipts/` — upload a JPEG/PNG photo or a PDF (multipart `file`), queued for scanning
 - `GET /api/receipts/{id}`, `GET /api/receipts/{id}/image` — own scan and its photo
-- `POST /api/receipts/{id}/accept` — link the saved expense; `POST /api/receipts/{id}/retry` — queue a failed scan again
+- `POST /api/receipts/{id}/split` — save as expense(s) split by lines; the server derives the shares (`private_own` moves your own lines into a personal expense)
+- `POST /api/receipts/{id}/accept` — link an expense saved by hand; `POST /api/receipts/{id}/retry` — queue a failed scan again
 - `DELETE /api/receipts/{id}` — delete scan and photo
 
 ### Balances & settings

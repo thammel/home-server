@@ -43,6 +43,7 @@ async def lifespan(_app: FastAPI):
     with SessionLocal() as db:
         seed(db)
     tasks = [asyncio.create_task(_backup_loop())]
+    # One worker per process; uvicorn must not run with --workers (README, receipts).
     if receipt_scanner.configured():
         tasks.append(asyncio.create_task(receipt_worker.run(SessionLocal)))
     yield
