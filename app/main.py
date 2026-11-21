@@ -13,6 +13,7 @@ from app.app_settings import get_setting
 from app.database import SessionLocal, engine
 from app.db_init import backup_database, migrate, seed, sqlite_path
 from app.bank.syncs import registry as bank_syncs
+from app.receipts import scanner as receipt_scanner, worker as receipt_worker
 from app.routers.api import auth, balances, bank, expenses, receipts, settings as settings_router, users
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -41,9 +42,12 @@ async def lifespan(_app: FastAPI):
     migrate(engine)
     with SessionLocal() as db:
         seed(db)
-    backup_task = asyncio.create_task(_backup_loop())
+    tasks = [asyncio.create_task(_backup_loop())]
+    if receipt_scanner.configured():
+        tasks.append(asyncio.create_task(receipt_worker.run(SessionLocal)))
     yield
-    backup_task.cancel()
+    for task in tasks:
+        task.cancel()
     bank_syncs.clear()
 
 

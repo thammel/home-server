@@ -64,7 +64,7 @@ New dependencies (range in `pyproject.toml`, pin in `requirements.txt`)
 ## Phase 2: background worker
 - One asyncio task started in `lifespan`, next to the backup loop.
 - Loop:
-  1. Any `queued` scans? If not, sleep 60 s.
+  1. Any `queued` scans? If not, sleep 10 s (one cheap DB query).
   2. Check the endpoint (`GET /v1/models`, 3 s timeout). If down, back
      off (1 min, growing to 15 min) and retry.
   3. Take the oldest scan, mark `processing`, call
@@ -74,14 +74,17 @@ New dependencies (range in `pyproject.toml`, pin in `requirements.txt`)
      `urllib` is enough.
   4. Validate the answer with a Pydantic model. Store it, mark `done`.
      Flag a warning when the items do not add up to the total.
-  5. On error: `attempts += 1`, back to `queued`; after 3 attempts mark
-     `failed` with the error text.
+  5. Bad answer (HTTP 4xx, invalid JSON, missing image): `attempts += 1`,
+     back to `queued`; after 3 attempts mark `failed` with the error
+     text. Endpoint down, HTTP 429 or 5xx: back to `queued` without
+     counting an attempt, and back off as in step 2.
 - On startup, reset scans stuck in `processing` to `queued`.
 - With Ollama: the OpenAI-compatible API has no `keep_alive` field. Set
   `OLLAMA_KEEP_ALIVE` on the GPU machine so it frees GPU memory soon
   after the queue is empty.
-- Config in `app/config.py`: `RECEIPT_SCANNER_URL` (unset = feature
-  off), `RECEIPT_SCANNER_KEY` (optional), `RECEIPT_SCANNER_MODEL`,
+- Config in `app/config.py`: `RECEIPT_SCANNER_URL` and
+  `RECEIPT_SCANNER_MODEL` (both needed, else feature off),
+  `RECEIPT_SCANNER_KEY` (optional),
   `RECEIPT_SCANNER_EXTRA` (optional JSON merged into the request, e.g.
   `{"reasoning_effort": "low"}`).
 

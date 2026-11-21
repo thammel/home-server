@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app import config, models, schemas
 from app.auth import get_current_user, get_db, utcnow
+from app.receipts import scanner
 
 router = APIRouter()
 log = logging.getLogger("app.receipts")
@@ -23,7 +24,7 @@ Image.MAX_IMAGE_PIXELS = 100_000_000
 
 
 def _enabled() -> bool:
-    return bool(config.RECEIPT_SCANNER_URL)
+    return scanner.configured()
 
 
 def _member(user: models.User = Depends(get_current_user)) -> models.User:

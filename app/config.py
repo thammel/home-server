@@ -3,6 +3,7 @@
 Defaults suit local development (DB at project root). The Docker image sets
 DATA_DIR=/data so the database and backups live on a mounted volume.
 """
+import json
 import os
 from pathlib import Path
 
@@ -51,5 +52,9 @@ FINTS_PRODUCT_ID = os.environ.get("FINTS_PRODUCT_ID") or None
 RECEIPT_SCANNER_URL = (os.environ.get("RECEIPT_SCANNER_URL") or "").rstrip("/") or None
 RECEIPT_SCANNER_KEY = os.environ.get("RECEIPT_SCANNER_KEY") or None
 RECEIPT_SCANNER_MODEL = os.environ.get("RECEIPT_SCANNER_MODEL") or None
+# JSON object merged into every scan request, e.g. {"reasoning_effort": "low"}.
+RECEIPT_SCANNER_EXTRA = json.loads(os.environ.get("RECEIPT_SCANNER_EXTRA") or "{}")
+if not isinstance(RECEIPT_SCANNER_EXTRA, dict):
+    raise ValueError("RECEIPT_SCANNER_EXTRA must be a JSON object")
 RECEIPTS_DIR = DATA_DIR / "receipts"
 RECEIPT_MAX_BYTES = _env_int("RECEIPT_MAX_BYTES", 15 * 1024 * 1024)
