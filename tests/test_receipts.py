@@ -22,7 +22,7 @@ from app.auth import get_current_user, get_db, hash_password
 from app.database import Base
 from app.receipts import scanner, worker
 from app.receipts.scanner import ScanFailed, ScannerUnavailable
-from app.routers.api import expenses, receipts
+from app.routers.api import expenses, receipts, users
 from app.schemas import ReceiptItem, ReceiptResult
 
 _ORIENTATION = 0x0112
@@ -115,6 +115,7 @@ def flat(monkeypatch, tmp_path):
         app = FastAPI()
         app.include_router(receipts.router, prefix="/api/receipts")
         app.include_router(expenses.router, prefix="/api/expenses")
+        app.include_router(users.router, prefix="/api/users")
 
         def override_get_db():
             s = session_factory()
@@ -618,3 +619,38 @@ def test_list_reports_scanner_status(flat, monkeypatch):
     listed = flat["anna"].get("/api/receipts/").json()
     assert listed["scanner_reachable"] is True
     assert listed["scanner_last_reachable_at"] is not None
+
+
+# --- receipt lines (ADR 0010) ---------------------------------------------------
+
+
+def add_line(flat, expense_id, name, line_total, *people):
+    with flat["db"]() as db:
+        position = db.query(models.ExpenseItem).filter_by(expense_id=expense_id).count()
+        item = models.ExpenseItem(
+            expense_id=expense_id, position=position, name=name, line_total=line_total
+        )
+        item.users = [models.ExpenseItemUser(user_id=flat["ids"][p]) for p in people]
+        db.add(item)
+        db.commit()
+        return item.id
+
+
+def test_deleting_expense_deletes_its_lines(flat):
+    expense_id = expense_for(flat, flat["anna"], "Anna", "Ben")
+    add_line(flat, expense_id, "Wine", 6.0, "Anna", "Ben")
+    assert flat["anna"].delete(f"/api/expenses/{expense_id}").status_code == 204
+    with flat["db"]() as db:
+        assert db.query(models.ExpenseItem).count() == 0
+        assert db.query(models.ExpenseItemUser).count() == 0
+
+
+def test_user_named_on_a_line_cannot_be_deleted(flat):
+    with flat["db"]() as db:
+        carl = models.User(name="Carl", password_hash=hash_password("testpass"))
+        db.add(carl)
+        db.commit()
+        flat["ids"]["Carl"] = carl.id
+    expense_id = expense_for(flat, flat["anna"], "Anna", "Ben")
+    add_line(flat, expense_id, "Wine", 6.0, "Carl")
+    assert flat["admin"].delete(f"/api/users/{flat['ids']['Carl']}").status_code == 409
