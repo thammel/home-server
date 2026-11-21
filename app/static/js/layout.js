@@ -71,7 +71,8 @@ async function addBankLink(nav, path) {
     nav.lastElementChild.before(el("a", {
         href: "/bank", class: active ? "navlink active" : "navlink", "aria-current": active ? "page" : null,
     }, icon("bank"), el("span", { class: "label" }, "Bank"),
-    status.new_count ? el("span", { class: "badge accent", title: `${status.new_count} to review` }, String(status.new_count)) : null));
+    status.new_count ? el("span", { class: "badge accent", title: `${status.new_count} to review` },
+        status.new_count > 99 ? "99+" : String(status.new_count)) : null));
 }
 
 /**

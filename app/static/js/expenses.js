@@ -4,7 +4,7 @@ import { boot, showFatal } from "./layout.js";
 import { consumedBy, expenseList, payerNames } from "./expense-list.js";
 import { $, el, isSettlement, money, mount } from "./ui.js";
 
-const state = { q: "", category: "", month: "", person: "", scope: "", payments: false };
+const state = { q: "", category: "", month: "", person: "", scope: "", paidBy: "", payments: false };
 
 async function start() {
     const { me } = await boot();
@@ -19,6 +19,16 @@ async function start() {
         "aria-label": label,
         onchange: (e) => { state[key] = e.target.value; update(); },
     }, el("option", { value: "" }, label), options.map(([value, text]) => el("option", { value }, text)));
+
+    const chip = (label, set) => el("button", {
+        type: "button", class: "chip", "aria-pressed": "false",
+        onclick: (e) => {
+            const on = e.currentTarget.getAttribute("aria-pressed") !== "true";
+            e.currentTarget.setAttribute("aria-pressed", String(on));
+            set(on);
+            update();
+        },
+    }, label);
 
     const monthLabel = (m) => {
         const [y, mo] = m.split("-").map(Number);
@@ -42,9 +52,10 @@ async function start() {
             me.is_admin ? select("person", "Everyone", people.map(u => [String(u.id), u.name])) : null,
             // Admins never receive personal expenses (ADR 0006), so the filter would be empty for them.
             me.is_admin ? null : select("scope", "All types", [["shared", "Shared"], ["personal", "Personal"]]),
-            el("label", { class: "inline-check" },
-                el("input", { type: "checkbox", role: "switch", onchange: (e) => { state.payments = e.target.checked; update(); } }),
-                "Show payments"),
+            me.is_admin ? select("paidBy", "Paid by anyone", people.map(u => [String(u.id), `Paid by ${u.name}`])) : null,
+            el("div", { class: "filter-chips" },
+                me.is_admin ? null : chip("Paid by me", (on) => { state.paidBy = on ? String(me.id) : ""; }),
+                chip("Payments", (on) => { state.payments = on; })),
         ),
         summary,
         listBox,
@@ -57,6 +68,7 @@ async function start() {
             (!state.month || e.date.startsWith(state.month)) &&
             (!state.person || e.shares.some(s => s.user_id === Number(state.person))) &&
             (!state.scope || e.personal === (state.scope === "personal")) &&
+            (!state.paidBy || e.shares.some(s => s.user_id === Number(state.paidBy) && s.share < 0)) &&
             (!state.q || `${e.description} ${e.category} ${e.comment ?? ""}`.toLowerCase().includes(state.q)));
     }
 
