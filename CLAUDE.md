@@ -75,10 +75,11 @@ The user knows the tools but not necessarily every protocol underneath (FinTS, S
 - `app/auth.py` — bcrypt_sha256 hashing, rolling session, `get_current_user`, `require_admin` deps, cookie helpers, `utcnow()`
 - `app/models.py` — `User` (is_admin, is_active, must_change_password), `Expense`, `ExpenseShare`, `UserSession`, `AppSetting`
 - `app/schemas.py` — Pydantic schemas; validation (name/password lengths, cost > 0, cents rounding, currency code)
-- `app/routers/api/` — `auth` (login throttle), `users`, `expenses`, `balances`, `settings`, `bank`
+- `app/routers/api/` — `auth` (login throttle), `users`, `expenses`, `balances`, `settings`, `bank`, `receipts`
+- `app/receipts/` — receipt scanning (ADR 0009): `scanner.py` (only code that talks to the vision model; OpenAI-compatible, stdlib `urllib`), `worker.py` (queue loop started in lifespan, backoff, 3 attempts, `status` in memory)
 - `app/bank/` — bank import (ADR 0007): `fints_backend.py` (only code that talks to the bank; replaced by a fake in tests), `importer.py` (dedupe, default range, duplicate hint), `syncs.py` (syncs waiting for approval, in memory, 5 min)
 - `app/static/js/` — see Frontend below
-- `tests/test_api.py` — all tests; `tests/conftest.py` points DATA_DIR at temp dir
+- `tests/test_api.py` — core API tests; `tests/test_bank.py`, `tests/test_receipts.py` per feature (fake bank / fake scanner, generated images, never real data); `tests/conftest.py` points DATA_DIR at temp dir
 - `Dockerfile`, `docker-compose.yml`, `.env.example`, `requirements.txt` (pinned runtime deps for image)
 
 ## Schema changes
@@ -119,6 +120,8 @@ No Alembic. New column → add to model AND append `(table, column, DDL)` to `_C
 
 **Bank (ADR 0007):** off unless `FINTS_PRODUCT_ID` is set. All endpoints scoped to the current user; admin → 403 (`GET /api/bank/` returns `enabled: false`). PIN only in the sync request / parked session, never stored or logged. One sync per user; parked sync expires after 5 min. Deleting an expense puts its bank line back to `new`.
 
+**Receipts (ADR 0009):** off unless `RECEIPT_SCANNER_URL` and `RECEIPT_SCANNER_MODEL` are set. Scans are the uploader's only: other users 404, admin 403 (`GET /api/receipts/` returns `enabled: false`). Upload accepts JPEG/PNG, stored under `DATA_DIR/receipts/` upright, max 2000 px, without EXIF. PDF (max 5 pages): text layer saved as `<uuid>.txt` and sent as text, page 1 rendered as the `.jpg`; no text layer means photo path. Status `queued -> processing -> done | failed -> accepted`; endpoint down/429/5xx postpones without an attempt, bad answers count (3 max). Deleting an expense puts its scan back to `done`. Scanner key only in `.env`, never in DB, logs or responses.
+
 **Settings:** GET any user; PATCH admin only. `app_name` (1–40 chars) is injected server-side into every page via `{{APP_NAME}}` placeholder in the HTML (escaped) — never hardcode the app name; nav brand reads `settings.app_name`.
 
 ## Expense share model
@@ -147,6 +150,7 @@ FastAPI serve HTML skeletons; JS builds UI. Pages (`_PAGES` in main.py):
 - `/users/{id}/settings` → `settings.js` (name, password; forced first-login password change)
 - `/admin` → `admin.js` (users, add flatmate, settings)
 - `/bank` → `bank.js` (sync with PIN + approval step, review new transactions one by one: Personal / Split / Ignore)
+- `/receipts` → `receipts.js` (upload, scan list polled while reading, `?scan=<id>` review beside the photo). Entry points: card on Add, notice on dashboard (no nav slot left on mobile)
 
 Shared modules:
 - `api.js` — single source all API calls; add new endpoints here. Errors carry `.status` and readable `.message` (FastAPI `detail`)

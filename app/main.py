@@ -13,7 +13,8 @@ from app.app_settings import get_setting
 from app.database import SessionLocal, engine
 from app.db_init import backup_database, migrate, seed, sqlite_path
 from app.bank.syncs import registry as bank_syncs
-from app.routers.api import auth, balances, bank, expenses, settings as settings_router, users
+from app.receipts import scanner as receipt_scanner, worker as receipt_worker
+from app.routers.api import auth, balances, bank, expenses, receipts, settings as settings_router, users
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("app")
@@ -41,9 +42,12 @@ async def lifespan(_app: FastAPI):
     migrate(engine)
     with SessionLocal() as db:
         seed(db)
-    backup_task = asyncio.create_task(_backup_loop())
+    tasks = [asyncio.create_task(_backup_loop())]
+    if receipt_scanner.configured():
+        tasks.append(asyncio.create_task(receipt_worker.run(SessionLocal)))
     yield
-    backup_task.cancel()
+    for task in tasks:
+        task.cancel()
     bank_syncs.clear()
 
 
@@ -81,6 +85,7 @@ app.include_router(balances.router, prefix="/api/balances", tags=["Balances"])
 app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
 app.include_router(settings_router.router, prefix="/api/settings", tags=["Settings"])
 app.include_router(bank.router, prefix="/api/bank", tags=["Bank"])
+app.include_router(receipts.router, prefix="/api/receipts", tags=["Receipts"])
 
 
 @app.get("/api/health", tags=["Health"])
@@ -122,6 +127,7 @@ _PAGES = {
     "/users/{user_id:int}/settings": "settings.html",
     "/admin": "admin.html",
     "/bank": "bank.html",
+    "/receipts": "receipts.html",
 }
 
 for _route, _file in _PAGES.items():
