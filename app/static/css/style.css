@@ -382,6 +382,23 @@ article.message.notice { border-left-color: var(--accent); }
     align-items: center;
 }
 .filters input[type=search] { grid-column: 1 / -1; }
+.filter-chips { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: var(--pico-spacing); }
+.chip {
+    width: auto;
+    margin: 0;
+    padding: 0.3rem 0.85rem;
+    border-radius: 999px;
+    border: 1px solid var(--pico-muted-border-color);
+    background: transparent;
+    color: var(--pico-muted-color);
+    font-size: 0.85rem;
+}
+.chip:hover { color: var(--pico-color); border-color: var(--pico-muted-color); background: transparent; }
+.chip[aria-pressed="true"] {
+    color: var(--pico-primary-inverse);
+    background: var(--pico-primary-background);
+    border-color: var(--pico-primary-background);
+}
 .inline-check { display: flex; align-items: center; gap: 0.5rem; margin-bottom: var(--pico-spacing); white-space: nowrap; }
 .list-summary { font-size: 0.9rem; }
 
