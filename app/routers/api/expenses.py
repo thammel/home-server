@@ -210,6 +210,9 @@ def delete_expense(
     # Its bank line goes back to the review list instead of pointing at nothing.
     db.query(models.BankTransaction).filter(models.BankTransaction.expense_id == expense.id).update(
         {"expense_id": None, "status": "new"})
+    # Same for a scanned receipt: back to review.
+    db.query(models.ReceiptScan).filter(models.ReceiptScan.expense_id == expense.id).update(
+        {"expense_id": None, "status": "done"})
     db.delete(expense)
     db.commit()
     return None

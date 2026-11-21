@@ -11,7 +11,7 @@ from app import config
 from app.schemas import ReceiptResult
 
 _PROMPT = (
-    "Read this receipt. Return shop name, purchase date (YYYY-MM-DD), currency code, "
+    "Read this receipt. Return the shop name as customers know it (the brand, not the legal company name), purchase date (YYYY-MM-DD), currency code, "
     "the total paid, and every line item. A line like '2 Stk x 1,79' or '2 * 1,99' gives "
     "quantity and unit price of the item it belongs to; line_total is the amount at the "
     "right edge. Deposits (Pfand) and discounts are items; discounts are negative. "

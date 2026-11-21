@@ -129,7 +129,7 @@ class ReceiptScan(Base):
     id = Column(Integer, primary_key=True)
     uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), nullable=False)
-    # queued -> processing -> done | failed, then accepted | discarded after review.
+    # queued -> processing -> done | failed, then accepted after review; discarding deletes the scan.
     status = Column(String, nullable=False, default="queued", index=True)
     # File name inside RECEIPTS_DIR, never a path from the client.
     image_name = Column(String, nullable=False)

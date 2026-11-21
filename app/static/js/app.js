@@ -66,8 +66,10 @@ async function renderDashboard({ me }) {
     const settlementsBox = el("div");
     const reload = () => renderDashboard({ me });
 
+    const receiptsBox = el("div");
     mount(root,
         me.is_admin ? adminHero(balances, expenses) : personalHero(balances, me),
+        receiptsBox,
         el("section", {},
             el("h2", {}, me.is_admin ? "Who pays whom" : "Settle up"),
             settlementsBox),
@@ -77,10 +79,25 @@ async function renderDashboard({ me }) {
                 el("a", { href: "/expenses" }, "All expenses →")),
             expenseList(expenses.filter(e => !e.personal).slice(0, 6), { nameOf, perspectiveId: me.is_admin ? null : me.id })),
     );
+    if (!me.is_admin) showReadyReceipts(receiptsBox);
     renderSettlements(settlementsBox, settlements, {
         viewerId: me.is_admin ? null : me.id,
         onSettled: reload,
     });
+}
+
+async function showReadyReceipts(box) {
+    let list;
+    try {
+        list = await api.getReceipts();
+    } catch {
+        return;
+    }
+    const ready = list.enabled ? list.scans.filter(s => s.status === "done").length : 0;
+    if (!ready) return;
+    mount(box, el("article", { class: "message notice scan-entry" },
+        el("span", {}, ready === 1 ? "1 scanned receipt is ready to review." : `${ready} scanned receipts are ready to review.`),
+        el("a", { href: "/receipts", role: "button", class: "secondary outline" }, "Review")));
 }
 
 function personalHero(balances, me) {

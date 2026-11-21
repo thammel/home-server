@@ -43,8 +43,8 @@ Backend
   column migration, see ADR 0002):
   `id, uploaded_by, created_at, status, image_name, result_json, error,
   attempts, model, expense_id (nullable)`.
-  Status: `queued -> processing -> done | failed`, then `accepted` or
-  `discarded` after review.
+  Status: `queued -> processing -> done | failed`, then `accepted`
+  after review. Discarding deletes the scan.
 - `POST /api/receipts/` (multipart): accepts JPEG and PNG. Limit
   about 15 MB. No HEIC: iOS converts to JPEG when a browser uploads a
   photo.
@@ -98,18 +98,23 @@ Network and security
   before enabling it; flatmates should know receipts leave the house.
 
 ## Phase 3: review UI
-- Entry point: "Scan receipt" button on `/expenses/new`, using
-  `<input type="file" accept="image/*" capture="environment">` so phones
-  open the camera.
-- New page `/receipts` (`receipts.js`): list of the user's scans with
-  status (waiting for scanner, ready, failed). Show when the scanner was
-  last reachable, so "waiting" is explained.
-- Review view: receipt image beside the expense form (reuse
-  `share-form.js`), pre-filled with description = shop, date, cost =
-  total. Items shown as a list under the image.
-- "Save expense" creates the expense through the existing API and sets
-  `expense_id` + `accepted`. "Discard" sets `discarded`.
-- Badge in the nav when scans are ready for review.
+- New page `/receipts` (`receipts.js`): "Scan receipt" upload button
+  (`accept="image/jpeg,image/png"`, no `capture`, so phones offer camera
+  and photo library), then the user's scans by status: ready to review,
+  being read, could not be read (try again, enter by hand, delete),
+  saved. Polls every 15 s while scans are being read. Says when the
+  scanner is offline and when it was last reachable.
+- Review view (`/receipts?scan=<id>`): receipt image beside the expense
+  form (reuses `share-form.js`), pre-filled with description = shop,
+  date, cost = total, uploader pays, split equally. Items listed under
+  the image; warnings and a different receipt currency shown as notes.
+- "Save expense" creates the expense through the existing API, then
+  `POST /api/receipts/{id}/accept` links it (`accepted`). "Discard"
+  deletes the scan and its image. Deleting the expense puts the scan
+  back to `done` for review, like bank lines.
+- Entry points instead of a nav link (the mobile tab bar has five fixed
+  slots): a card on `/expenses/new` with the number ready to review,
+  and a notice on the dashboard when scans are ready.
 
 ## Phase 4: later, optional
 - Digital e-receipts (PDF with text layer): extract the text

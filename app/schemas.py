@@ -276,3 +276,10 @@ class ReceiptScanRead(BaseModel):
 class ReceiptScanList(BaseModel):
     enabled: bool
     scans: list[ReceiptScanRead]
+    # None until the worker has checked the scanner once since the last restart.
+    scanner_reachable: bool | None = None
+    scanner_last_reachable_at: datetime.datetime | None = None
+
+
+class ReceiptAccept(BaseModel):
+    expense_id: int

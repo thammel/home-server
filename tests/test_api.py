@@ -705,7 +705,7 @@ def test_real_app_boots_seeds_admin_and_serves_pages():
         page = c.get("/")
         assert page.status_code == 200
         assert "default-src 'self'" in page.headers["content-security-policy"]
-        for path in ("/expenses", "/expenses/new", "/expenses/3", "/users/1", "/users/1/settings", "/admin", "/bank"):
+        for path in ("/expenses", "/expenses/new", "/expenses/3", "/users/1", "/users/1/settings", "/admin", "/bank", "/receipts"):
             assert c.get(path).status_code == 200, path
 
         login = c.post("/api/auth/login", json={"name": "admin", "password": "changeme"})

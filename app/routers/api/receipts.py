@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app import config, models, schemas
 from app.auth import get_current_user, get_db, utcnow
-from app.receipts import scanner
+from app.receipts import scanner, worker
 
 router = APIRouter()
 log = logging.getLogger("app.receipts")
@@ -91,7 +91,12 @@ def list_scans(
         .order_by(models.ReceiptScan.created_at.desc(), models.ReceiptScan.id.desc())
         .all()
     )
-    return schemas.ReceiptScanList(enabled=True, scans=[_read(s) for s in scans])
+    return schemas.ReceiptScanList(
+        enabled=True,
+        scans=[_read(s) for s in scans],
+        scanner_reachable=worker.status.reachable,
+        scanner_last_reachable_at=worker.status.last_reachable_at,
+    )
 
 
 @router.post(
@@ -149,6 +154,40 @@ def get_image(
     return FileResponse(
         path, media_type="image/jpeg", headers={"Cache-Control": "private, no-store"}
     )
+
+
+@router.post("/{scan_id}/accept", response_model=schemas.ReceiptScanRead)
+def accept(
+    scan_id: int,
+    body: schemas.ReceiptAccept,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(_member),
+):
+    """Link the expense the user saved from this scan."""
+    scan = _own_scan(db, user, scan_id)
+    if scan.status not in ("done", "failed"):
+        raise HTTPException(status_code=409, detail="This receipt is not ready for review")
+    expense = db.get(models.Expense, body.expense_id)
+    if expense is None or not any(s.user_id == user.id for s in expense.shares):
+        raise HTTPException(status_code=404, detail="Expense not found")
+    scan.status = "accepted"
+    scan.expense_id = expense.id
+    db.commit()
+    return _read(scan)
+
+
+@router.post("/{scan_id}/retry", response_model=schemas.ReceiptScanRead)
+def retry(
+    scan_id: int, db: Session = Depends(get_db), user: models.User = Depends(_member)
+):
+    scan = _own_scan(db, user, scan_id)
+    if scan.status != "failed":
+        raise HTTPException(status_code=409, detail="Only a failed scan can be retried")
+    scan.status = "queued"
+    scan.attempts = 0
+    scan.error = None
+    db.commit()
+    return _read(scan)
 
 
 @router.delete("/{scan_id}", status_code=status.HTTP_204_NO_CONTENT)

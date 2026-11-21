@@ -22,7 +22,7 @@ from app.auth import get_current_user, get_db, hash_password
 from app.database import Base
 from app.receipts import scanner, worker
 from app.receipts.scanner import ScanFailed, ScannerUnavailable
-from app.routers.api import receipts
+from app.routers.api import expenses, receipts
 from app.schemas import ReceiptItem, ReceiptResult
 
 _ORIENTATION = 0x0112
@@ -74,6 +74,7 @@ def flat(monkeypatch, tmp_path):
     def make_app(user_id):
         app = FastAPI()
         app.include_router(receipts.router, prefix="/api/receipts")
+        app.include_router(expenses.router, prefix="/api/expenses")
 
         def override_get_db():
             s = session_factory()
@@ -101,6 +102,7 @@ def flat(monkeypatch, tmp_path):
             "ben": ben,
             "dir": tmp_path / "receipts",
             "db": session_factory,
+            "ids": ids,
         }
 
 
@@ -113,12 +115,12 @@ def stored_image(flat, client, scan_id) -> Image.Image:
 
 def test_feature_off_without_scanner_url(flat, monkeypatch):
     monkeypatch.setattr(config, "RECEIPT_SCANNER_URL", None)
-    assert flat["anna"].get("/api/receipts/").json() == {"enabled": False, "scans": []}
+    assert flat["anna"].get("/api/receipts/").json()["enabled"] is False
     assert upload(flat["anna"], photo()).status_code == 404
 
 
 def test_admin_cannot_scan_receipts(flat):
-    assert flat["admin"].get("/api/receipts/").json() == {"enabled": False, "scans": []}
+    assert flat["admin"].get("/api/receipts/").json()["enabled"] is False
     assert upload(flat["admin"], photo()).status_code == 403
 
 
@@ -423,3 +425,74 @@ def test_run_loop_backs_off_while_scanner_is_unreachable(flat, monkeypatch):
     assert run_until_first_sleep(flat, monkeypatch, Offline()) == [60]
     assert scan_row(flat, scan_id).status == "queued"
     assert worker.status.reachable is False
+
+
+# --- review: accept, retry, expense deleted -----------------------------------
+
+
+def set_status(flat, scan_id, status):
+    with flat["db"]() as db:
+        db.get(models.ReceiptScan, scan_id).status = status
+        db.commit()
+
+
+def expense_for(flat, client, payer, consumer, cost=6.0):
+    res = client.post(
+        "/api/expenses/",
+        json={
+            "date": "2026-11-20",
+            "description": "Corner Shop",
+            "category": "Groceries",
+            "cost": cost,
+            "shares": [
+                {"user_id": flat["ids"][payer], "share": -cost},
+                {"user_id": flat["ids"][consumer], "share": cost},
+            ],
+        },
+    )
+    assert res.status_code in (200, 201), res.text
+    return res.json()["id"]
+
+
+def test_accept_links_expense_and_deleting_it_reopens_review(flat):
+    scan_id = upload(flat["anna"], photo()).json()["id"]
+    set_status(flat, scan_id, "done")
+    expense_id = expense_for(flat, flat["anna"], "Anna", "Ben")
+
+    res = flat["anna"].post(f"/api/receipts/{scan_id}/accept", json={"expense_id": expense_id})
+    assert res.status_code == 200, res.text
+    assert (res.json()["status"], res.json()["expense_id"]) == ("accepted", expense_id)
+
+    assert flat["anna"].delete(f"/api/expenses/{expense_id}").status_code in (200, 204)
+    scan = flat["anna"].get(f"/api/receipts/{scan_id}").json()
+    assert (scan["status"], scan["expense_id"]) == ("done", None)
+
+
+def test_accept_refuses_foreign_expense_and_unready_scan(flat):
+    scan_id = upload(flat["anna"], photo()).json()["id"]
+    foreign = expense_for(flat, flat["ben"], "Ben", "Ben")
+    own = expense_for(flat, flat["anna"], "Anna", "Anna")
+    assert flat["anna"].post(f"/api/receipts/{scan_id}/accept", json={"expense_id": own}).status_code == 409
+    set_status(flat, scan_id, "done")
+    assert flat["anna"].post(f"/api/receipts/{scan_id}/accept", json={"expense_id": foreign}).status_code == 404
+    assert flat["anna"].post(f"/api/receipts/{scan_id}/accept", json={"expense_id": 9999}).status_code == 404
+
+
+def test_retry_requeues_failed_scan_only(flat):
+    scan_id = upload(flat["anna"], photo()).json()["id"]
+    assert flat["anna"].post(f"/api/receipts/{scan_id}/retry").status_code == 409
+    with flat["db"]() as db:
+        scan = db.get(models.ReceiptScan, scan_id)
+        scan.status, scan.attempts, scan.error = "failed", 3, "not JSON"
+        db.commit()
+    res = flat["anna"].post(f"/api/receipts/{scan_id}/retry").json()
+    assert (res["status"], res["attempts"], res["error"]) == ("queued", 0, None)
+
+
+def test_list_reports_scanner_status(flat, monkeypatch):
+    monkeypatch.setattr(worker, "status", worker.ScannerStatus())
+    assert flat["anna"].get("/api/receipts/").json()["scanner_reachable"] is None
+    worker.status.record(True)
+    listed = flat["anna"].get("/api/receipts/").json()
+    assert listed["scanner_reachable"] is True
+    assert listed["scanner_last_reachable_at"] is not None

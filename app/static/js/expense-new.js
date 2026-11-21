@@ -19,7 +19,9 @@ async function start() {
     }
 
     const formRoot = el("div");
-    mount(page, el("article", { class: "form-card" }, el("h1", {}, "Add expense"), formRoot));
+    const scanBox = el("div");
+    mount(page, scanBox, el("article", { class: "form-card" }, el("h1", {}, "Add expense"), formRoot));
+    if (!me.is_admin) showScanEntry(scanBox);
     createExpenseForm(formRoot, {
         people,
         me,
@@ -31,6 +33,22 @@ async function start() {
         },
         onCancel: () => { window.location.href = next; },
     });
+}
+
+/** Link to receipt scanning, with the number of scans waiting for review (ADR 0009). */
+async function showScanEntry(box) {
+    let list;
+    try {
+        list = await api.getReceipts();
+    } catch {
+        return;
+    }
+    if (!list.enabled) return;
+    const ready = list.scans.filter(s => s.status === "done").length;
+    mount(box, el("article", { class: "scan-entry" },
+        el("span", {}, "Have a receipt?",
+            ready ? el("span", { class: "badge accent", title: `${ready} ready to review` }, `${ready} ready`) : null),
+        el("a", { href: "/receipts", role: "button", class: "secondary outline" }, ready ? "Review receipts" : "Scan receipt")));
 }
 
 start().catch(showFatal);

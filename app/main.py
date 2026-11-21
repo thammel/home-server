@@ -127,6 +127,7 @@ _PAGES = {
     "/users/{user_id:int}/settings": "settings.html",
     "/admin": "admin.html",
     "/bank": "bank.html",
+    "/receipts": "receipts.html",
 }
 
 for _route, _file in _PAGES.items():
