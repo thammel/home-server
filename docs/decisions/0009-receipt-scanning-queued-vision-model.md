@@ -39,10 +39,16 @@ loyalty numbers, shop locations) leave the server; whoever configures
 it must check where data is processed and tell the other users. Results
 arrive minutes later, not while the user waits. One key serves all
 users, so usage limits are shared. Receipt images need disk space and
-are not in the DB backup. Adds `python-multipart` and `pillow`. Only
-JPEG and PNG are accepted.
+are not in the DB backup. Adds `python-multipart`, `pillow` and
+`pypdfium2` (parses untrusted PDFs in C++; capped at 5 pages). Only
+JPEG, PNG and PDF are accepted.
 
-**Neutral:** the model may misread item names; the user edits them.
+**Neutral:** e-receipt PDFs (amended 2026-11-21) skip the image: their
+text layer goes to the same endpoint as plain text, which is exact,
+cheaper and works with text-only models. The model still does the
+parsing, because every chain lays out its receipts differently. A PDF
+without text is read as a photo of its first page. The model may
+misread item names; the user edits them.
 The app warns when line items do not add up to the total.
 
 ## Alternatives considered
@@ -53,6 +59,7 @@ The app warns when line items do not add up to the total.
 | Synchronous scan during upload | Fails whenever the endpoint is down; long requests on phones |
 | Per-user endpoint and key | Secrets in the DB and backups (compare ADR 0007) |
 | Ollama-native API | Locks out hosted services; OpenAI-compatible covers both |
+| Parse PDF text with rules per shop | Breaks whenever a chain changes its layout; the model already handles all of them |
 | Admin may view all scans | Receipts hold card and loyalty numbers; ADR 0006 keeps such data owner-only |
 
 ## Revisit when

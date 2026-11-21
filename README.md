@@ -140,13 +140,13 @@ The PIN is used for one sync only and is never stored or logged. Incoming money 
 
 ## Receipt scanning
 
-Flatmates upload a photo of a receipt on **Add → Scan receipt**. A vision language model reads it in the background and pre-fills an expense; nothing is saved until you check it and press Save.
+Flatmates upload a photo of a receipt or an e-receipt PDF on **Add → Scan receipt**. A language model reads it in the background and pre-fills an expense; nothing is saved until you check it and press Save.
 
 1. Pick a model that reads images and serve it behind an OpenAI-compatible API: [Ollama](https://ollama.com) on a machine with a GPU (`http://<host>:11434/v1`, no key), or a hosted inference service.
 2. Set `RECEIPT_SCANNER_URL` and `RECEIPT_SCANNER_MODEL` (plus `RECEIPT_SCANNER_KEY` if needed) in `.env` and restart.
 3. Uploads wait in a queue while the scanner is offline and are read once it is back. A scan that gets three unusable answers is marked as failed and can be retried or entered by hand.
 
-Photos are turned upright, scaled down and stored without EXIF data (no GPS position). They are sent to the configured URL only. With a hosted service, check where it processes data and tell your flatmates: receipts can show partial card numbers and loyalty numbers. Scans are visible to their uploader only, admins included. Accepted photos stay until you delete them.
+Photos are turned upright, scaled down and stored without EXIF data (no GPS position). From a PDF only its text and a picture of the first page are kept; the text goes to the model instead of an image. A PDF without text (a scan) is read like a photo. They are sent to the configured URL only. With a hosted service, check where it processes data and tell your flatmates: receipts can show partial card numbers and loyalty numbers. Scans are visible to their uploader only, admins included. Accepted photos stay until you delete them.
 
 ## Local development
 
@@ -190,7 +190,7 @@ All endpoints except `POST /api/auth/login` and `GET /api/health` require a sess
 
 ### Receipts
 - `GET /api/receipts/` — `enabled`, own scans, scanner reachability
-- `POST /api/receipts/` — upload a JPEG/PNG photo (multipart `file`), queued for scanning
+- `POST /api/receipts/` — upload a JPEG/PNG photo or a PDF (multipart `file`), queued for scanning
 - `GET /api/receipts/{id}`, `GET /api/receipts/{id}/image` — own scan and its photo
 - `POST /api/receipts/{id}/accept` — link the saved expense; `POST /api/receipts/{id}/retry` — queue a failed scan again
 - `DELETE /api/receipts/{id}` — delete scan and photo

@@ -10,13 +10,16 @@ from pydantic import ValidationError
 from app import config
 from app.schemas import ReceiptResult
 
-_PROMPT = (
-    "Read this receipt. Return the shop name as customers know it (the brand, not the legal company name), purchase date (YYYY-MM-DD), currency code, "
+_INSTRUCTIONS = (
+    "Return the shop name as customers know it (the brand, not the legal company name), purchase date (YYYY-MM-DD), currency code, "
     "the total paid, and every line item. A line like '2 Stk x 1,79' or '2 * 1,99' gives "
     "quantity and unit price of the item it belongs to; line_total is the amount at the "
     "right edge. Deposits (Pfand) and discounts are items; discounts are negative. "
     "Answer only with JSON matching the schema."
 )
+_IMAGE_PROMPT = "Read this receipt. " + _INSTRUCTIONS
+_TEXT_PROMPT = "Read this receipt, given as text extracted from a PDF. " + _INSTRUCTIONS
+
 
 _SCHEMA = {
     "type": "object",
@@ -99,18 +102,21 @@ class OpenAICompatibleScanner:
 
     def scan(self, jpeg: bytes) -> ReceiptResult:
         image_url = "data:image/jpeg;base64," + base64.b64encode(jpeg).decode()
+        return self._ask(
+            [
+                {"type": "text", "text": _IMAGE_PROMPT},
+                {"type": "image_url", "image_url": {"url": image_url}},
+            ]
+        )
+
+    def scan_text(self, text: str) -> ReceiptResult:
+        return self._ask([{"type": "text", "text": f"{_TEXT_PROMPT}\n\n{text}"}])
+
+    def _ask(self, content: list[dict]) -> ReceiptResult:
         body = {
             "model": config.RECEIPT_SCANNER_MODEL,
             "temperature": 0,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": _PROMPT},
-                        {"type": "image_url", "image_url": {"url": image_url}},
-                    ],
-                }
-            ],
+            "messages": [{"role": "user", "content": content}],
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {"name": "receipt", "schema": _SCHEMA, "strict": True},

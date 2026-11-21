@@ -43,6 +43,46 @@ def photo(
     return out.getvalue()
 
 
+def text_pdf(*lines: str, pages=1) -> bytes:
+    """A minimal e-receipt PDF with a text layer, one Helvetica line per entry."""
+    stream = (
+        "BT /F1 10 Tf 12 TL 20 380 Td "
+        + " ".join(f"({line}) Tj T*" for line in lines)
+        + " ET"
+    )
+    kids = " ".join(f"{3 + i} 0 R" for i in range(pages))
+    objs = [
+        "<< /Type /Catalog /Pages 2 0 R >>",
+        f"<< /Type /Pages /Kids [{kids}] /Count {pages} >>",
+        *[
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 226 400] /Contents {3 + pages} 0 R "
+            f"/Resources << /Font << /F1 {4 + pages} 0 R >> >> >>"
+        ]
+        * pages,
+        f"<< /Length {len(stream)} >>\nstream\n{stream}\nendstream",
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+    out = b"%PDF-1.4\n"
+    offsets = []
+    for number, obj in enumerate(objs, 1):
+        offsets.append(len(out))
+        out += f"{number} 0 obj\n{obj}\nendobj\n".encode()
+    xref = len(out)
+    out += f"xref\n0 {len(objs) + 1}\n0000000000 65535 f \n".encode()
+    out += b"".join(f"{o:010d} 00000 n \n".encode() for o in offsets)
+    out += f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
+    return out
+
+
+def scanned_pdf() -> bytes:
+    out = io.BytesIO()
+    Image.new("RGB", (300, 900), "white").save(out, format="PDF")
+    return out.getvalue()
+
+
+RECEIPT_LINES = ("Corner Shop", "Milk 1,50 EUR", "SUMME 1,50")
+
+
 def upload(client, data, name="receipt.jpg", mime="image/jpeg"):
     return client.post("/api/receipts/", files={"file": (name, data, mime)})
 
@@ -164,6 +204,33 @@ def test_upload_rejects_other_files(flat, data):
     assert not flat["dir"].exists() or not list(flat["dir"].iterdir())
 
 
+def test_upload_pdf_keeps_its_text_and_a_preview_image(flat):
+    res = upload(flat["anna"], text_pdf(*RECEIPT_LINES), "r.pdf", "application/pdf")
+    assert res.status_code == 201, res.text
+    [text] = flat["dir"].glob("*.txt")
+    assert text.read_text() == "\n".join(RECEIPT_LINES)
+    assert text.with_suffix(".jpg").is_file()
+    width, height = stored_image(flat, flat["anna"], res.json()["id"]).size
+    assert height > width
+
+
+def test_upload_scanned_pdf_is_read_as_image(flat):
+    res = upload(flat["anna"], scanned_pdf(), "r.pdf", "application/pdf")
+    assert res.status_code == 201, res.text
+    assert not list(flat["dir"].glob("*.txt"))
+    assert len(list(flat["dir"].glob("*.jpg"))) == 1
+
+
+@pytest.mark.parametrize(
+    "data",
+    [b"%PDF-1.4 broken", text_pdf(*RECEIPT_LINES, pages=6)],
+    ids=["broken", "too-many-pages"],
+)
+def test_upload_rejects_unusable_pdf(flat, data):
+    assert upload(flat["anna"], data, "r.pdf", "application/pdf").status_code == 415
+    assert not flat["dir"].exists() or not list(flat["dir"].iterdir())
+
+
 def test_upload_rejects_too_large_file(flat, monkeypatch):
     monkeypatch.setattr(config, "RECEIPT_MAX_BYTES", 100)
     assert upload(flat["anna"], photo()).status_code == 413
@@ -188,6 +255,12 @@ def test_delete_removes_scan_and_image(flat):
     assert not list(flat["dir"].glob("*.jpg"))
 
 
+def test_delete_removes_pdf_text_too(flat):
+    scan_id = upload(flat["anna"], text_pdf(*RECEIPT_LINES), "r.pdf").json()["id"]
+    flat["anna"].delete(f"/api/receipts/{scan_id}")
+    assert not list(flat["dir"].iterdir())
+
+
 # --- worker and scanner client ------------------------------------------------
 
 
@@ -197,12 +270,20 @@ class FakeScanner:
     def __init__(self, *script):
         self.script = list(script)
         self.images = []
+        self.texts = []
 
     def reachable(self):
         return True
 
     def scan(self, jpeg):
         self.images.append(jpeg)
+        return self._next()
+
+    def scan_text(self, text):
+        self.texts.append(text)
+        return self._next()
+
+    def _next(self):
         outcome = self.script.pop(0)
         if isinstance(outcome, Exception):
             raise outcome
@@ -242,6 +323,15 @@ def test_worker_stores_result_of_oldest_queued_scan(flat):
     assert scan["result"]["date"] == "2026-11-20"
     assert scan["result"]["warnings"] == []
     assert fake.images[0].startswith(b"\xff\xd8")
+
+
+def test_worker_sends_pdf_text_instead_of_image(flat):
+    scan_id = upload(flat["anna"], text_pdf(*RECEIPT_LINES), "r.pdf").json()["id"]
+    fake = FakeScanner(result())
+    worker.process_next(flat["db"], fake)
+    assert fake.texts == ["\n".join(RECEIPT_LINES)]
+    assert fake.images == []
+    assert scan_row(flat, scan_id).status == "done"
 
 
 def test_worker_warns_when_items_do_not_add_up(flat):
@@ -361,6 +451,21 @@ def test_scanner_sends_openai_compatible_request(flat, monkeypatch):
     assert image == "data:image/jpeg;base64," + base64.b64encode(b"jpeg").decode()
 
 
+def test_scanner_sends_pdf_text_as_plain_message(flat, monkeypatch):
+    fake = FakeUrlopen(
+        answer(
+            '{"shop": "S", "date": "2026-11-20", "currency": "EUR", "total": 2, "items": []}'
+        )
+    )
+    monkeypatch.setattr(urllib.request, "urlopen", fake)
+
+    scanner.OpenAICompatibleScanner().scan_text("SUMME 2,00")
+
+    [content] = json.loads(fake.requests[0].data)["messages"][0]["content"]
+    assert content["type"] == "text"
+    assert content["text"].endswith("\n\nSUMME 2,00")
+
+
 def test_scanner_without_key_sends_no_authorization(flat, monkeypatch):
     fake = FakeUrlopen({"data": []})
     monkeypatch.setattr(urllib.request, "urlopen", fake)
@@ -459,7 +564,9 @@ def test_accept_links_expense_and_deleting_it_reopens_review(flat):
     set_status(flat, scan_id, "done")
     expense_id = expense_for(flat, flat["anna"], "Anna", "Ben")
 
-    res = flat["anna"].post(f"/api/receipts/{scan_id}/accept", json={"expense_id": expense_id})
+    res = flat["anna"].post(
+        f"/api/receipts/{scan_id}/accept", json={"expense_id": expense_id}
+    )
     assert res.status_code == 200, res.text
     assert (res.json()["status"], res.json()["expense_id"]) == ("accepted", expense_id)
 
@@ -472,10 +579,25 @@ def test_accept_refuses_foreign_expense_and_unready_scan(flat):
     scan_id = upload(flat["anna"], photo()).json()["id"]
     foreign = expense_for(flat, flat["ben"], "Ben", "Ben")
     own = expense_for(flat, flat["anna"], "Anna", "Anna")
-    assert flat["anna"].post(f"/api/receipts/{scan_id}/accept", json={"expense_id": own}).status_code == 409
+    assert (
+        flat["anna"]
+        .post(f"/api/receipts/{scan_id}/accept", json={"expense_id": own})
+        .status_code
+        == 409
+    )
     set_status(flat, scan_id, "done")
-    assert flat["anna"].post(f"/api/receipts/{scan_id}/accept", json={"expense_id": foreign}).status_code == 404
-    assert flat["anna"].post(f"/api/receipts/{scan_id}/accept", json={"expense_id": 9999}).status_code == 404
+    assert (
+        flat["anna"]
+        .post(f"/api/receipts/{scan_id}/accept", json={"expense_id": foreign})
+        .status_code
+        == 404
+    )
+    assert (
+        flat["anna"]
+        .post(f"/api/receipts/{scan_id}/accept", json={"expense_id": 9999})
+        .status_code
+        == 404
+    )
 
 
 def test_retry_requeues_failed_scan_only(flat):

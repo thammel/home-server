@@ -5,6 +5,7 @@ import json
 import logging
 import uuid
 
+import pypdfium2 as pdfium
 from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from PIL import Image, ImageOps, UnidentifiedImageError
@@ -19,6 +20,11 @@ log = logging.getLogger("app.receipts")
 
 _MAX_SIDE = 2000
 _ACCEPTED_FORMATS = {"JPEG", "PNG"}
+_UNSUPPORTED = "Upload a JPEG or PNG photo or a PDF receipt"
+# E-receipts are one or two pages; more is not a receipt.
+_MAX_PDF_PAGES = 5
+# Below this the PDF is a scan without a text layer; the photo path reads it instead.
+_MIN_TEXT_CHARS = 20
 # A phone photo is about 12-50 MP; anything far beyond is a decompression bomb.
 Image.MAX_IMAGE_PIXELS = 100_000_000
 
@@ -62,21 +68,57 @@ def normalise_image(data: bytes) -> bytes:
     try:
         with Image.open(io.BytesIO(data)) as image:
             if image.format not in _ACCEPTED_FORMATS:
-                raise HTTPException(
-                    status_code=415, detail="Upload a JPEG or PNG photo"
-                )
+                raise HTTPException(status_code=415, detail=_UNSUPPORTED)
             # Lets the JPEG decoder skip detail we would scale away anyway; saves memory on small servers.
             image.draft("RGB", (_MAX_SIDE, _MAX_SIDE))
             image = ImageOps.exif_transpose(image)
             image = image.convert("RGB")
     except (UnidentifiedImageError, Image.DecompressionBombError, OSError):
-        raise HTTPException(
-            status_code=415, detail="Upload a JPEG or PNG photo"
-        ) from None
+        raise HTTPException(status_code=415, detail=_UNSUPPORTED) from None
+    return _to_jpeg(image)
+
+
+def _to_jpeg(image: Image.Image) -> bytes:
     image.thumbnail((_MAX_SIDE, _MAX_SIDE))
     out = io.BytesIO()
     image.save(out, format="JPEG", quality=85)
     return out.getvalue()
+
+
+def read_pdf(data: bytes) -> tuple[bytes, str | None]:
+    """First page as preview JPEG, plus the text of all pages (None for a scanned PDF)."""
+    try:
+        pdf = pdfium.PdfDocument(data)
+    except pdfium.PdfiumError:
+        raise HTTPException(status_code=415, detail=_UNSUPPORTED) from None
+    try:
+        if not 1 <= len(pdf) <= _MAX_PDF_PAGES:
+            raise HTTPException(
+                status_code=415,
+                detail=f"A receipt PDF has at most {_MAX_PDF_PAGES} pages",
+            )
+        texts = []
+        for page in pdf:
+            textpage = page.get_textpage()
+            texts.append(textpage.get_text_range())
+            textpage.close()
+        page = pdf[0]
+        width, height = page.get_size()
+        scale = min(_MAX_SIDE / max(width, height, 1), 4)
+        preview = page.render(scale=scale).to_pil().convert("RGB")
+    except pdfium.PdfiumError:
+        raise HTTPException(status_code=415, detail=_UNSUPPORTED) from None
+    finally:
+        pdf.close()
+    text = "\n".join(texts).replace("\r\n", "\n").strip()
+    return _to_jpeg(preview), text if len(text) >= _MIN_TEXT_CHARS else None
+
+
+def _write(target, data: bytes):
+    partial = target.with_suffix(".part")
+    partial.write_bytes(data)
+    partial.replace(target)
+    return target
 
 
 @router.get("/", response_model=schemas.ReceiptScanList)
@@ -110,14 +152,19 @@ def upload(
     data = file.file.read(config.RECEIPT_MAX_BYTES + 1)
     if len(data) > config.RECEIPT_MAX_BYTES:
         raise HTTPException(status_code=413, detail="The photo is too large")
-    jpeg = normalise_image(data)
+    if data.startswith(b"%PDF-"):
+        jpeg, text = read_pdf(data)
+    else:
+        jpeg, text = normalise_image(data), None
 
     config.RECEIPTS_DIR.mkdir(parents=True, exist_ok=True)
     name = f"{uuid.uuid4().hex}.jpg"
     target = config.RECEIPTS_DIR / name
-    partial = target.with_suffix(".part")
-    partial.write_bytes(jpeg)
-    partial.replace(target)
+    written = []
+    if text is not None:
+        # Written before the image so the worker never sees the image without its text.
+        written.append(_write(target.with_suffix(".txt"), text.encode()))
+    written.append(_write(target, jpeg))
 
     scan = models.ReceiptScan(
         uploaded_by=user.id,
@@ -130,7 +177,8 @@ def upload(
     try:
         db.commit()
     except Exception:
-        target.unlink(missing_ok=True)
+        for path in written:
+            path.unlink(missing_ok=True)
         raise
     db.refresh(scan)
     return _read(scan)
@@ -166,7 +214,9 @@ def accept(
     """Link the expense the user saved from this scan."""
     scan = _own_scan(db, user, scan_id)
     if scan.status not in ("done", "failed"):
-        raise HTTPException(status_code=409, detail="This receipt is not ready for review")
+        raise HTTPException(
+            status_code=409, detail="This receipt is not ready for review"
+        )
     expense = db.get(models.Expense, body.expense_id)
     if expense is None or not any(s.user_id == user.id for s in expense.shares):
         raise HTTPException(status_code=404, detail="Expense not found")
@@ -198,5 +248,7 @@ def delete_scan(
     name = scan.image_name
     db.delete(scan)
     db.commit()
-    (config.RECEIPTS_DIR / name).unlink(missing_ok=True)
+    image = config.RECEIPTS_DIR / name
+    image.unlink(missing_ok=True)
+    image.with_suffix(".txt").unlink(missing_ok=True)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

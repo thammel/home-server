@@ -45,9 +45,15 @@ Backend
   attempts, model, expense_id (nullable)`.
   Status: `queued -> processing -> done | failed`, then `accepted`
   after review. Discarding deletes the scan.
-- `POST /api/receipts/` (multipart): accepts JPEG and PNG. Limit
+- `POST /api/receipts/` (multipart): accepts JPEG, PNG and PDF. Limit
   about 15 MB. No HEIC: iOS converts to JPEG when a browser uploads a
   photo.
+- PDF (e-receipts): at most 5 pages. The text layer is stored as
+  `<uuid>.txt` and sent to the model as text, not as an image: no
+  misread characters, much cheaper, and text-only models work too.
+  Page 1 is rendered to `<uuid>.jpg` for the review page. A PDF
+  without a text layer (a scan) goes the photo path. The PDF itself
+  is not kept.
 - On upload, normalise the image: rotate upright from EXIF,
   scale the long side to 2000 px, save as JPEG **without EXIF** (drops
   GPS position). Store under `DATA_DIR/receipts/<uuid>.jpg`.
@@ -60,6 +66,8 @@ Backend
 New dependencies (range in `pyproject.toml`, pin in `requirements.txt`)
 - `python-multipart` (FastAPI file uploads)
 - `pillow` (ships aarch64 wheels)
+- `pypdfium2` (PDF text and page rendering, PDFium as in Chrome; ships
+  aarch64 wheels)
 
 ## Phase 2: background worker
 - One asyncio task started in `lifespan`, next to the backup loop.
@@ -98,10 +106,10 @@ Network and security
   before enabling it; flatmates should know receipts leave the house.
 
 ## Phase 3: review UI
-- New page `/receipts` (`receipts.js`): "Take photo" (`capture`, opens
-  the camera) and "Choose photo" (library) buttons, both
-  `accept="image/jpeg,image/png"`; Android's picker shows no camera
-  without `capture`. Then the user's scans by status: ready to review,
+- New page `/receipts` (`receipts.js`): one "Scan receipt" button,
+  `accept="image/jpeg,image/png,application/pdf"`, no `capture`. The PDF
+  type makes Android show its file chooser with the camera; images
+  alone open the photo picker, which has none. Then the user's scans by status: ready to review,
   being read, could not be read (try again, enter by hand, delete),
   saved. Polls every 15 s while scans are being read. Says when the
   scanner is offline and when it was last reachable.

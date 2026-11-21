@@ -89,9 +89,14 @@ def process_next(session_factory: sessionmaker, scanner) -> bool:
         scan_id, image_name = scan.id, scan.image_name
 
     path = config.RECEIPTS_DIR / image_name
+    text_path = path.with_suffix(".txt")
     outcome: ReceiptResult | Exception
     try:
-        outcome = check_totals(scanner.scan(path.read_bytes()))
+        if text_path.is_file():
+            result = scanner.scan_text(text_path.read_text())
+        else:
+            result = scanner.scan(path.read_bytes())
+        outcome = check_totals(result)
     except FileNotFoundError:
         outcome = ScanFailed("The receipt image is missing")
     except (ScannerUnavailable, ScanFailed) as e:

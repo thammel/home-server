@@ -11,6 +11,7 @@ dependencies = [
     "bcrypt<4.1",
     "fints>=5.0,<6",
     "pillow>=11",
+    "pypdfium2>=5",
     "python-multipart>=0.0.18",
 ]
 
