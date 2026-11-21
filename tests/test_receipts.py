@@ -436,7 +436,7 @@ def test_scanner_sends_openai_compatible_request(flat, monkeypatch):
             '{"shop": "S", "date": "2026-11-20", "currency": "EUR", "total": 2, "items": []}'
         )
     )
-    monkeypatch.setattr(urllib.request, "urlopen", fake)
+    monkeypatch.setattr(scanner._opener, "open", fake)
 
     assert scanner.OpenAICompatibleScanner().scan(b"jpeg").total == 2.0
 
@@ -458,7 +458,7 @@ def test_scanner_sends_pdf_text_as_plain_message(flat, monkeypatch):
             '{"shop": "S", "date": "2026-11-20", "currency": "EUR", "total": 2, "items": []}'
         )
     )
-    monkeypatch.setattr(urllib.request, "urlopen", fake)
+    monkeypatch.setattr(scanner._opener, "open", fake)
 
     scanner.OpenAICompatibleScanner().scan_text("SUMME 2,00")
 
@@ -469,7 +469,7 @@ def test_scanner_sends_pdf_text_as_plain_message(flat, monkeypatch):
 
 def test_scanner_without_key_sends_no_authorization(flat, monkeypatch):
     fake = FakeUrlopen({"data": []})
-    monkeypatch.setattr(urllib.request, "urlopen", fake)
+    monkeypatch.setattr(scanner._opener, "open", fake)
     assert scanner.OpenAICompatibleScanner().reachable() is True
     assert fake.requests[0].full_url == "http://scanner.test/v1/models"
     assert fake.requests[0].get_header("Authorization") is None
@@ -496,7 +496,7 @@ def test_scanner_without_key_sends_no_authorization(flat, monkeypatch):
 def test_scanner_errors_split_into_retry_later_and_attempt_failed(
     flat, monkeypatch, error, expected
 ):
-    monkeypatch.setattr(urllib.request, "urlopen", FakeUrlopen(error=error))
+    monkeypatch.setattr(scanner._opener, "open", FakeUrlopen(error=error))
     with pytest.raises(expected):
         scanner.OpenAICompatibleScanner().scan(b"jpeg")
 
@@ -819,3 +819,85 @@ def test_expense_without_lines_has_no_match_flag(flat):
     expense_id = expense_for(flat, flat["anna"], "Anna", "Ben")
     detail = flat["anna"].get(f"/api/expenses/{expense_id}").json()
     assert (detail["items"], detail["items_match"]) == ([], None)
+
+
+# --- review fixes: limits, config errors, double saves --------------------------
+
+
+def test_upload_rejects_too_many_pixels_before_decoding(flat):
+    huge = io.BytesIO()
+    Image.new("1", (9000, 9000), 1).save(huge, format="PNG")
+    res = upload(flat["anna"], huge.getvalue(), "r.png", "image/png")
+    assert res.status_code == 413
+    assert not list(flat["dir"].glob("*"))
+
+
+def test_upload_refuses_more_open_scans_than_the_limit(flat, monkeypatch):
+    monkeypatch.setattr(receipts, "MAX_OPEN_SCANS", 2)
+    first = upload(flat["anna"], photo()).json()["id"]
+    upload(flat["anna"], photo())
+    assert upload(flat["anna"], photo()).status_code == 409
+    assert upload(flat["ben"], photo()).status_code == 201
+    set_status(flat, first, "accepted")
+    assert upload(flat["anna"], photo()).status_code == 201
+
+
+def test_upload_leaves_no_files_when_storing_fails(flat, monkeypatch):
+    real_write = receipts._write
+
+    def fail_on_image(target, data):
+        if target.suffix == ".jpg":
+            raise OSError("disk full")
+        return real_write(target, data)
+
+    monkeypatch.setattr(receipts, "_write", fail_on_image)
+    with pytest.raises(OSError):
+        upload(flat["anna"], text_pdf(*RECEIPT_LINES), "r.pdf")
+    assert not list(flat["dir"].glob("*"))
+
+
+@pytest.mark.parametrize("code", [301, 401, 403, 404])
+def test_scanner_config_errors_postpone_without_attempt(flat, monkeypatch, code):
+    error = urllib.error.HTTPError("u", code, "no", {}, io.BytesIO(b""))
+    monkeypatch.setattr(scanner._opener, "open", FakeUrlopen(error=error))
+    scan_id = upload(flat["anna"], photo()).json()["id"]
+    assert worker.process_next(flat["db"], scanner.OpenAICompatibleScanner()) is False
+    scan = scan_row(flat, scan_id)
+    assert (scan.status, scan.attempts) == ("queued", 0)
+
+
+def test_scanner_does_not_follow_redirects():
+    assert not any(
+        type(h) is urllib.request.HTTPRedirectHandler for h in scanner._opener.handlers
+    )
+
+
+@pytest.mark.parametrize(
+    ("error", "reachable"),
+    [
+        (None, True),
+        (urllib.error.HTTPError("u", 404, "no", {}, io.BytesIO(b"")), True),
+        (urllib.error.HTTPError("u", 400, "no", {}, io.BytesIO(b"")), True),
+        (urllib.error.HTTPError("u", 401, "no", {}, io.BytesIO(b"")), False),
+        (urllib.error.HTTPError("u", 503, "no", {}, io.BytesIO(b"")), False),
+        (urllib.error.URLError("refused"), False),
+    ],
+)
+def test_reachable_accepts_any_answer_except_auth_and_outage(
+    flat, monkeypatch, error, reachable
+):
+    monkeypatch.setattr(scanner._opener, "open", FakeUrlopen({"data": []}, error=error))
+    assert scanner.OpenAICompatibleScanner().reachable() is reachable
+
+
+def test_run_loop_requeues_scan_left_processing_by_an_error(flat, monkeypatch):
+    scan_id = upload(flat["anna"], photo()).json()["id"]
+
+    def crash(session_factory, _scanner):
+        set_status(flat, scan_id, "processing")
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(worker, "process_next", crash)
+    assert run_until_first_sleep(flat, monkeypatch, FakeScanner(result())) == [60]
+    assert scan_row(flat, scan_id).status == "queued"
+

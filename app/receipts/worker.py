@@ -1,6 +1,7 @@
 """Background worker: sends queued receipt scans to the scanner, one at a time (ADR 0009)."""
 
 import asyncio
+import contextlib
 import datetime
 import logging
 from dataclasses import dataclass
@@ -9,7 +10,12 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app import config, models
 from app.auth import utcnow
-from app.receipts.scanner import OpenAICompatibleScanner, ScanFailed, ScannerUnavailable
+from app.receipts.scanner import (
+    OpenAICompatibleScanner,
+    ScanFailed,
+    ScannerMisconfigured,
+    ScannerUnavailable,
+)
 from app.schemas import ReceiptResult
 
 log = logging.getLogger("app.receipts")
@@ -93,7 +99,7 @@ def process_next(session_factory: sessionmaker, scanner) -> bool:
     outcome: ReceiptResult | Exception
     try:
         if text_path.is_file():
-            result = scanner.scan_text(text_path.read_text())
+            result = scanner.scan_text(text_path.read_text(encoding="utf-8"))
         else:
             result = scanner.scan(path.read_bytes())
         outcome = check_totals(result)
@@ -118,8 +124,16 @@ def process_next(session_factory: sessionmaker, scanner) -> bool:
             log.info("Receipt scan %d done", scan_id)
         elif isinstance(outcome, ScannerUnavailable):
             scan.status = "queued"
-            log.info(
-                "Receipt scan %d postponed: scanner unavailable (%s)", scan_id, outcome
+            level = (
+                logging.WARNING
+                if isinstance(outcome, ScannerMisconfigured)
+                else logging.INFO
+            )
+            log.log(
+                level,
+                "Receipt scan %d postponed: scanner unavailable (%s)",
+                scan_id,
+                outcome,
             )
         else:
             scan.attempts += 1
@@ -156,4 +170,7 @@ async def run(session_factory: sessionmaker, scanner=None) -> None:
             raise
         except Exception:
             log.exception("Receipt worker error")
+            # A failed write can leave the scan in `processing`; this worker is the only one.
+            with contextlib.suppress(Exception):
+                await asyncio.to_thread(reset_stuck, session_factory)
             await asyncio.sleep(_BACKOFF_START)

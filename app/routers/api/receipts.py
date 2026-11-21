@@ -29,7 +29,10 @@ _MAX_PDF_PAGES = 5
 # Below this the PDF is a scan without a text layer; the photo path reads it instead.
 _MIN_TEXT_CHARS = 20
 # A phone photo is about 12-50 MP; anything far beyond is a decompression bomb.
-Image.MAX_IMAGE_PIXELS = 100_000_000
+_MAX_PIXELS = 60_000_000
+# Unreviewed scans per user; each keeps a photo on disk.
+MAX_OPEN_SCANS = 30
+_OPEN = ("queued", "processing", "done", "failed")
 
 
 def _enabled() -> bool:
@@ -72,6 +75,11 @@ def normalise_image(data: bytes) -> bytes:
         with Image.open(io.BytesIO(data)) as image:
             if image.format not in _ACCEPTED_FORMATS:
                 raise HTTPException(status_code=415, detail=_UNSUPPORTED)
+            # Checked before decoding: Pillow's own bomb guard only warns below 2x its limit.
+            if image.width * image.height > _MAX_PIXELS:
+                raise HTTPException(
+                    status_code=413, detail="The photo has too many pixels"
+                )
             # Lets the JPEG decoder skip detail we would scale away anyway; saves memory on small servers.
             image.draft("RGB", (_MAX_SIDE, _MAX_SIDE))
             image = ImageOps.exif_transpose(image)
@@ -152,6 +160,19 @@ def upload(
     db: Session = Depends(get_db),
     user: models.User = Depends(_member),
 ):
+    open_scans = (
+        db.query(models.ReceiptScan)
+        .filter(
+            models.ReceiptScan.uploaded_by == user.id,
+            models.ReceiptScan.status.in_(_OPEN),
+        )
+        .count()
+    )
+    if open_scans >= MAX_OPEN_SCANS:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{MAX_OPEN_SCANS} receipts are waiting. Save or discard some first.",
+        )
     data = file.file.read(config.RECEIPT_MAX_BYTES + 1)
     if len(data) > config.RECEIPT_MAX_BYTES:
         raise HTTPException(status_code=413, detail="The photo is too large")
@@ -163,25 +184,28 @@ def upload(
     config.RECEIPTS_DIR.mkdir(parents=True, exist_ok=True)
     name = f"{uuid.uuid4().hex}.jpg"
     target = config.RECEIPTS_DIR / name
-    written = []
+    files = [target]
     if text is not None:
         # Written before the image so the worker never sees the image without its text.
-        written.append(_write(target.with_suffix(".txt"), text.encode()))
-    written.append(_write(target, jpeg))
-
-    scan = models.ReceiptScan(
-        uploaded_by=user.id,
-        created_at=utcnow(),
-        status="queued",
-        image_name=name,
-        attempts=0,
-    )
-    db.add(scan)
+        files.insert(0, target.with_suffix(".txt"))
     try:
+        if text is not None:
+            # A broken text layer can hold lone surrogates, which UTF-8 cannot encode.
+            _write(files[0], text.encode("utf-8", "replace"))
+        _write(target, jpeg)
+        scan = models.ReceiptScan(
+            uploaded_by=user.id,
+            created_at=utcnow(),
+            status="queued",
+            image_name=name,
+            attempts=0,
+        )
+        db.add(scan)
         db.commit()
     except Exception:
-        for path in written:
+        for path in files:
             path.unlink(missing_ok=True)
+            path.with_suffix(".part").unlink(missing_ok=True)
         raise
     db.refresh(scan)
     return _read(scan)

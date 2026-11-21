@@ -235,6 +235,8 @@ function renderReview(scan, byLines = scan.result?.items?.length > 0) {
         return;
     }
     const expense = prefill(result);
+    // Kept across retries: when linking fails after the expense was created, Save only links again.
+    let savedId = null;
     createExpenseForm(formRoot, {
         people: ctx.people,
         me: ctx.me,
@@ -242,8 +244,8 @@ function renderReview(scan, byLines = scan.result?.items?.length > 0) {
         expense: expense.shares.length ? expense : null,
         submitLabel: "Save expense",
         onSubmit: async (payload) => {
-            const saved = await api.addExpense(payload);
-            await api.acceptReceipt(scan.id, saved.id);
+            savedId ??= (await api.addExpense(payload)).id;
+            await api.acceptReceipt(scan.id, savedId);
             toast("Expense saved");
             await reloadList();
         },

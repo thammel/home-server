@@ -148,7 +148,9 @@ Flatmates upload a photo of a receipt or an e-receipt PDF on **Add → Scan rece
 
 When the receipt has line items, you can split it **by lines**: tap who each line is for (everyone, you, one flatmate, or any group). Each line is split equally within its group and the shares are worked out for you. Lines that are only yours can be kept private: they are then saved as a separate personal expense. The lines stay with the expense and are shown on its page; if someone later edits the shares by hand, the page says that they no longer match.
 
-Photos are turned upright, scaled down and stored without EXIF data (no GPS position). From a PDF only its text and a picture of the first page are kept; the text goes to the model instead of an image. A PDF without text (a scan) is read like a photo. They are sent to the configured URL only. With a hosted service, check where it processes data and tell your flatmates: receipts can show partial card numbers and loyalty numbers. Scans are visible to their uploader only, admins included. Accepted photos stay until you delete them.
+Photos are turned upright, scaled down and stored without EXIF data (no GPS position). From a PDF only its text and a picture of the first page are kept; the text goes to the model instead of an image. A PDF without text (a scan) is read like a photo. They are sent to the configured URL only. With a hosted service, check where it processes data and tell your flatmates: receipts can show partial card numbers and loyalty numbers. Scans are visible to their uploader only, admins included. Accepted photos stay until you delete them. At most 30 receipts per person can wait for review.
+
+Run the app as one process (no uvicorn `--workers`): each process starts its own scan worker, and two would read the same receipts twice.
 
 ## Local development
 

@@ -63,8 +63,31 @@ class ScannerUnavailable(Exception):
     """The endpoint is down or overloaded; try again later without counting an attempt."""
 
 
+class ScannerMisconfigured(ScannerUnavailable):
+    """Wrong URL, model or key: no scan can succeed until the operator fixes the config."""
+
+    def __init__(self, code: int):
+        super().__init__(f"HTTP {code}, check the scanner URL, model and key")
+        self.code = code
+
+
 class ScanFailed(Exception):
     """The endpoint answered, but not with a usable result; counts as an attempt."""
+
+
+# These answers mean the config is wrong, not this receipt; counting them as attempts
+# would fail every queued scan within seconds.
+_CONFIG_ERRORS = {401, 403, 404, 405}
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """urllib would send the Authorization header on to the redirect target."""
+
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+_opener = urllib.request.build_opener(_NoRedirect)
 
 
 def _request(path: str, body: dict | None, timeout: float) -> dict:
@@ -77,11 +100,13 @@ def _request(path: str, body: dict | None, timeout: float) -> dict:
         headers=headers,
     )
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as res:
+        with _opener.open(req, timeout=timeout) as res:
             return json.loads(res.read())
     except urllib.error.HTTPError as e:
         if e.code == 429 or e.code >= 500:
             raise ScannerUnavailable(f"HTTP {e.code}") from None
+        if e.code in _CONFIG_ERRORS or 300 <= e.code < 400:
+            raise ScannerMisconfigured(e.code) from None
         detail = e.read().decode(errors="replace")[:300]
         raise ScanFailed(f"HTTP {e.code}: {detail}") from None
     except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
@@ -94,11 +119,16 @@ def _request(path: str, body: dict | None, timeout: float) -> dict:
 
 class OpenAICompatibleScanner:
     def reachable(self) -> bool:
+        """Any answer counts: not every endpoint serves /models. Auth errors do not."""
         try:
             _request("/models", None, _CHECK_TIMEOUT)
-            return True
-        except (ScannerUnavailable, ScanFailed):
+        except ScannerMisconfigured as e:
+            return e.code in (404, 405)
+        except ScannerUnavailable:
             return False
+        except ScanFailed:
+            pass
+        return True
 
     def scan(self, jpeg: bytes) -> ReceiptResult:
         image_url = "data:image/jpeg;base64," + base64.b64encode(jpeg).decode()
