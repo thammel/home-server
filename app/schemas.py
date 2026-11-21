@@ -215,3 +215,19 @@ class BankCount(BaseModel):
 class BankTransactionUpdate(BaseModel):
     status: Literal["new", "ignored"] | None = None
     expense_id: int | None = None
+
+
+class ReceiptScanRead(BaseModel):
+    id: int
+    created_at: datetime.datetime
+    status: str
+    error: str | None
+    attempts: int
+    model: str | None
+    expense_id: int | None
+    result: dict | None = None
+
+
+class ReceiptScanList(BaseModel):
+    enabled: bool
+    scans: list[ReceiptScanRead]

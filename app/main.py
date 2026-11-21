@@ -13,7 +13,7 @@ from app.app_settings import get_setting
 from app.database import SessionLocal, engine
 from app.db_init import backup_database, migrate, seed, sqlite_path
 from app.bank.syncs import registry as bank_syncs
-from app.routers.api import auth, balances, bank, expenses, settings as settings_router, users
+from app.routers.api import auth, balances, bank, expenses, receipts, settings as settings_router, users
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("app")
@@ -81,6 +81,7 @@ app.include_router(balances.router, prefix="/api/balances", tags=["Balances"])
 app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
 app.include_router(settings_router.router, prefix="/api/settings", tags=["Settings"])
 app.include_router(bank.router, prefix="/api/bank", tags=["Bank"])
+app.include_router(receipts.router, prefix="/api/receipts", tags=["Receipts"])
 
 
 @app.get("/api/health", tags=["Health"])

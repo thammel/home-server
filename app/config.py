@@ -46,3 +46,10 @@ BACKUP_DIR = DATA_DIR / "backups"
 # Bank import over FinTS (ADR 0007). Off unless a registered FinTS product ID is set.
 # Free registration: https://www.hbci-zka.de/register/prod_register.htm
 FINTS_PRODUCT_ID = os.environ.get("FINTS_PRODUCT_ID") or None
+
+# Receipt scanning (ADR 0009). Off unless an OpenAI-compatible endpoint is set.
+RECEIPT_SCANNER_URL = (os.environ.get("RECEIPT_SCANNER_URL") or "").rstrip("/") or None
+RECEIPT_SCANNER_KEY = os.environ.get("RECEIPT_SCANNER_KEY") or None
+RECEIPT_SCANNER_MODEL = os.environ.get("RECEIPT_SCANNER_MODEL") or None
+RECEIPTS_DIR = DATA_DIR / "receipts"
+RECEIPT_MAX_BYTES = _env_int("RECEIPT_MAX_BYTES", 15 * 1024 * 1024)

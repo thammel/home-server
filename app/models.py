@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, Date, DateTime, Boolean, LargeBinary
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, Date, DateTime, Boolean, LargeBinary, Text
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -119,3 +119,22 @@ class BankTransaction(Base):
     fetched_at = Column(DateTime(timezone=True), nullable=False)
 
     account = relationship("BankAccount", back_populates="transactions")
+
+
+class ReceiptScan(Base):
+    """An uploaded receipt waiting for, or read by, the scanner (ADR 0009). Private to the uploader."""
+
+    __tablename__ = "receipt_scans"
+
+    id = Column(Integer, primary_key=True)
+    uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    # queued -> processing -> done | failed, then accepted | discarded after review.
+    status = Column(String, nullable=False, default="queued", index=True)
+    # File name inside RECEIPTS_DIR, never a path from the client.
+    image_name = Column(String, nullable=False)
+    result_json = Column(Text, nullable=True)
+    error = Column(String, nullable=True)
+    attempts = Column(Integer, nullable=False, default=0)
+    model = Column(String, nullable=True)
+    expense_id = Column(Integer, ForeignKey("expenses.id", ondelete="SET NULL"), nullable=True)

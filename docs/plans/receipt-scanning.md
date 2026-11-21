@@ -41,7 +41,7 @@ in 6-30 s. Only errors: single letters in item names.
 Backend
 - New table `receipt_scans` (new table, so `create_all` creates it; no
   column migration, see ADR 0002):
-  `id, uploaded_by, created_at, status, image_path, result_json, error,
+  `id, uploaded_by, created_at, status, image_name, result_json, error,
   attempts, model, expense_id (nullable)`.
   Status: `queued -> processing -> done | failed`, then `accepted` or
   `discarded` after review.
@@ -53,9 +53,9 @@ Backend
   GPS position). Store under `DATA_DIR/receipts/<uuid>.jpg`.
 - `GET /api/receipts/` own scans, `GET /api/receipts/{id}`,
   `GET /api/receipts/{id}/image`, `DELETE /api/receipts/{id}`.
-- Access: uploader only (ADR 0006, ADR 0009). Others, admin included,
-  get 404. Admin cannot upload, as admins never take part in expenses
-  (ADR 0001).
+- Access: uploader only (ADR 0006, ADR 0009); other users get 404.
+  Admins have no scans (ADR 0001): 403 like bank import, and the list
+  returns `enabled: false`.
 
 New dependencies (range in `pyproject.toml`, pin in `requirements.txt`)
 - `python-multipart` (FastAPI file uploads)
@@ -124,8 +124,8 @@ Network and security
 - Upload tests use a small generated image, never a real receipt.
 - Worker tests: model down (stays queued), bad JSON (attempts grow,
   then failed), success (done, result stored), stuck `processing` reset.
-- Access tests: other user and admin cannot read a scan or its image
-  (404); admin cannot upload.
+- Access tests: other user cannot read a scan or its image (404);
+  admin cannot upload or read (403).
 
 ## Backups
 - `backup_database` copies only the DB. Receipt images live in
