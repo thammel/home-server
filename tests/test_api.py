@@ -675,7 +675,37 @@ def test_migrate_adds_columns_to_old_database(tmp_path):
     version = con.execute("PRAGMA user_version").fetchone()[0]
     con.close()
     assert row == (1, 0)
-    assert version >= 2
+    assert version >= 3
+
+
+def test_migrate_adds_receipt_tables_and_scan_link(tmp_path):
+    import sqlite3
+    from app.db_init import SCHEMA_VERSION, migrate
+
+    db_file = tmp_path / "v2.db"
+    con = sqlite3.connect(db_file)
+    con.execute("CREATE TABLE receipt_scans (id INTEGER PRIMARY KEY, uploaded_by INTEGER NOT NULL, "
+                "created_at DATETIME NOT NULL, status VARCHAR NOT NULL, image_name VARCHAR NOT NULL, "
+                "result_json TEXT, error VARCHAR, attempts INTEGER NOT NULL, model VARCHAR, expense_id INTEGER)")
+    con.execute("INSERT INTO receipt_scans (uploaded_by, created_at, status, image_name, attempts) "
+                "VALUES (1, '2026-11-20', 'done', 'a.jpg', 0)")
+    con.execute("PRAGMA user_version = 2")
+    con.commit()
+    con.close()
+
+    engine = create_engine(f"sqlite:///{db_file}")
+    migrate(engine)
+    migrate(engine)
+    engine.dispose()
+
+    con = sqlite3.connect(db_file)
+    tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    row = con.execute("SELECT status, personal_expense_id FROM receipt_scans").fetchone()
+    version = con.execute("PRAGMA user_version").fetchone()[0]
+    con.close()
+    assert {"expense_items", "expense_item_users", "users"} <= tables
+    assert row == ("done", None)
+    assert version == SCHEMA_VERSION == 3
 
 
 def test_backup_database_prunes_old_copies(tmp_path):
@@ -705,7 +735,7 @@ def test_real_app_boots_seeds_admin_and_serves_pages():
         page = c.get("/")
         assert page.status_code == 200
         assert "default-src 'self'" in page.headers["content-security-policy"]
-        for path in ("/expenses", "/expenses/new", "/expenses/3", "/users/1", "/users/1/settings", "/admin", "/bank"):
+        for path in ("/expenses", "/expenses/new", "/expenses/3", "/users/1", "/users/1/settings", "/admin", "/bank", "/receipts"):
             assert c.get(path).status_code == 200, path
 
         login = c.post("/api/auth/login", json={"name": "admin", "password": "changeme"})

@@ -3,6 +3,8 @@
 Defaults suit local development (DB at project root). The Docker image sets
 DATA_DIR=/data so the database and backups live on a mounted volume.
 """
+
+import json
 import os
 from pathlib import Path
 
@@ -46,3 +48,16 @@ BACKUP_DIR = DATA_DIR / "backups"
 # Bank import over FinTS (ADR 0007). Off unless a registered FinTS product ID is set.
 # Free registration: https://www.hbci-zka.de/register/prod_register.htm
 FINTS_PRODUCT_ID = os.environ.get("FINTS_PRODUCT_ID") or None
+
+# Receipt scanning (ADR 0009). Off unless an OpenAI-compatible endpoint is set.
+RECEIPT_SCANNER_URL = (os.environ.get("RECEIPT_SCANNER_URL") or "").rstrip("/") or None
+if RECEIPT_SCANNER_URL and not RECEIPT_SCANNER_URL.startswith(("http://", "https://")):
+    raise ValueError("RECEIPT_SCANNER_URL must start with http:// or https://")
+RECEIPT_SCANNER_KEY = os.environ.get("RECEIPT_SCANNER_KEY") or None
+RECEIPT_SCANNER_MODEL = os.environ.get("RECEIPT_SCANNER_MODEL") or None
+# JSON object merged into every scan request, e.g. {"reasoning_effort": "low"}.
+RECEIPT_SCANNER_EXTRA = json.loads(os.environ.get("RECEIPT_SCANNER_EXTRA") or "{}")
+if not isinstance(RECEIPT_SCANNER_EXTRA, dict):
+    raise ValueError("RECEIPT_SCANNER_EXTRA must be a JSON object")
+RECEIPTS_DIR = DATA_DIR / "receipts"
+RECEIPT_MAX_BYTES = _env_int("RECEIPT_MAX_BYTES", 15 * 1024 * 1024)

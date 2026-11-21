@@ -1,7 +1,8 @@
 import datetime
+import math
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, StringConstraints, field_validator
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50)]
 Password = Annotated[str, StringConstraints(min_length=8, max_length=200)]
@@ -102,6 +103,22 @@ class ExpenseRead(BaseModel):
     personal: bool
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ExpenseItemRead(BaseModel):
+    name: str
+    quantity: float
+    unit_price: float | None
+    line_total: float
+    user_ids: list[int]
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ExpenseDetail(ExpenseRead):
+    items: list[ExpenseItemRead] = []
+    # None without receipt lines; False when shares were edited after the receipt split (ADR 0010).
+    items_match: bool | None = None
 
 
 class BalanceRead(BaseModel):
@@ -215,3 +232,111 @@ class BankCount(BaseModel):
 class BankTransactionUpdate(BaseModel):
     status: Literal["new", "ignored"] | None = None
     expense_id: int | None = None
+
+
+class ReceiptItem(BaseModel):
+    name: str
+    quantity: float = 1
+    unit_price: float | None = None
+    line_total: float
+
+    @field_validator("unit_price", "line_total")
+    @classmethod
+    def _round(cls, value: float | None) -> float | None:
+        return None if value is None else _round_money(value)
+
+
+class ReceiptResult(BaseModel):
+    """What the scanner read. Lenient on purpose: the user reviews and fixes every field."""
+
+    shop: str = ""
+    date: datetime.date | None = None
+    currency: str | None = None
+    total: float
+    items: list[ReceiptItem] = []
+    warnings: list[str] = []
+
+    @field_validator("date", mode="before")
+    @classmethod
+    def _date_or_none(cls, value):
+        if isinstance(value, str):
+            try:
+                return datetime.date.fromisoformat(value.strip())
+            except ValueError:
+                return None
+        return value
+
+    @field_validator("currency", mode="before")
+    @classmethod
+    def _currency_code(cls, value):
+        if isinstance(value, str) and len(value.strip()) == 3 and value.strip().isalpha():
+            return value.strip().upper()
+        return None
+
+    @field_validator("total")
+    @classmethod
+    def _round_total(cls, value: float) -> float:
+        return _round_money(value)
+
+
+class ReceiptScanRead(BaseModel):
+    id: int
+    created_at: datetime.datetime
+    status: str
+    error: str | None
+    attempts: int
+    model: str | None
+    expense_id: int | None
+    result: dict | None = None
+
+
+class ReceiptScanList(BaseModel):
+    enabled: bool
+    scans: list[ReceiptScanRead]
+    # None until the worker has checked the scanner once since the last restart.
+    scanner_reachable: bool | None = None
+    scanner_last_reachable_at: datetime.datetime | None = None
+
+
+class ReceiptAccept(BaseModel):
+    expense_id: int
+
+
+def _finite_or_text(value):
+    # The 422 answer echoes the input; NaN or Infinity in it would make that answer a 500.
+    if isinstance(value, float) and not math.isfinite(value):
+        return "not a finite number"
+    return value
+
+
+LineAmount = Annotated[float, BeforeValidator(_finite_or_text), Field(ge=-1_000_000, le=1_000_000)]
+
+
+class ReceiptSplitLine(BaseModel):
+    name: ShortText
+    quantity: Annotated[float, BeforeValidator(_finite_or_text)] = Field(default=1, gt=0, le=1_000_000)
+    unit_price: LineAmount | None = None
+    # Negative for discounts.
+    line_total: LineAmount
+    user_ids: list[int] = Field(min_length=1)
+
+    @field_validator("unit_price", "line_total")
+    @classmethod
+    def _round(cls, value: float | None) -> float | None:
+        return None if value is None else _round_money(value)
+
+
+class ReceiptSplit(BaseModel):
+    """Save a scan as expense(s) split by its lines (ADR 0010). The server derives the shares."""
+
+    date: datetime.date
+    description: ShortText
+    category: ShortText
+    comment: Comment | None = None
+    # Lines that belong only to the uploader go into a separate personal expense.
+    private_own: bool = False
+    lines: list[ReceiptSplitLine] = Field(min_length=1, max_length=500)
+
+
+class ReceiptSplitResult(BaseModel):
+    expenses: list[ExpenseRead]

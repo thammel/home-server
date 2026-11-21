@@ -5,7 +5,8 @@ async function request(path, options = {}) {
         credentials: "same-origin",
         ...options,
         headers: {
-            "Content-Type": "application/json",
+            // FormData sets its own multipart boundary.
+            ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
             ...(options.headers || {}),
         },
     });
@@ -70,6 +71,18 @@ export const api = {
     updateBankTransaction: (txId, payload) => request(`/api/bank/transactions/${txId}`, json("PATCH", payload)),
     ignoreNewBankTransactions: () => request("/api/bank/transactions/ignore-new", { method: "POST" }),
     undoLastBankSync: () => request("/api/bank/last-sync", { method: "DELETE" }),
+
+    getReceipts: () => request("/api/receipts/"),
+    uploadReceipt: (file) => {
+        const body = new FormData();
+        body.append("file", file);
+        return request("/api/receipts/", { method: "POST", body });
+    },
+    acceptReceipt: (scanId, expenseId) => request(`/api/receipts/${scanId}/accept`, json("POST", { expense_id: expenseId })),
+    splitReceipt: (scanId, body) => request(`/api/receipts/${scanId}/split`, json("POST", body)),
+    retryReceipt: (scanId) => request(`/api/receipts/${scanId}/retry`, { method: "POST" }),
+    deleteReceipt: (scanId) => request(`/api/receipts/${scanId}`, { method: "DELETE" }),
+    receiptImageUrl: (scanId) => `/api/receipts/${scanId}/image`,
 };
 
 export function redirectToLogin() {
