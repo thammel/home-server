@@ -261,13 +261,16 @@ function renderDone(rows) {
                             t.expense_id ? [" · ", el("a", { href: `/expenses/${t.expense_id}?next=/bank` }, "expense")] : null)),
                     el("span", { class: "side" },
                         el("span", { class: "amount" }, money(t.amount, t.currency)),
-                        el("button", {
-                            type: "button", class: "link-button",
-                            onclick: async () => {
-                                await api.updateBankTransaction(t.id, { status: "new" });
-                                await loadReview();
-                            },
-                        }, "Review again")))))));
+                        // Back to review would leave the saved expense behind and allow a second one.
+                        t.expense_id
+                            ? el("a", { href: `/expenses/${t.expense_id}?edit&next=/bank` }, "Edit expense")
+                            : el("button", {
+                                type: "button", class: "link-button",
+                                onclick: async () => {
+                                    await api.updateBankTransaction(t.id, { status: "new" });
+                                    await loadReview();
+                                },
+                            }, "Review again")))))));
     };
     mount(doneBox, el("section", {}, list("ignored", "Ignored"), list("booked", "Recorded")));
 }

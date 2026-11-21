@@ -18,7 +18,10 @@ async function start() {
         nameOf: Object.fromEntries(users.map(u => [u.id, u.name])),
         canEdit: me.is_admin || expense.shares.some(s => s.user_id === me.id && s.share < 0),
     };
-    showDetails(expense, ctx);
+    // Bank review links here to change a recorded line's expense instead of creating a second one.
+    const wantsEdit = new URLSearchParams(window.location.search).has("edit");
+    if (wantsEdit && ctx.canEdit) showEdit(expense, ctx);
+    else showDetails(expense, ctx);
 }
 
 function perPerson(expense) {
