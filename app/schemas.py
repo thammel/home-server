@@ -104,6 +104,22 @@ class ExpenseRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ExpenseItemRead(BaseModel):
+    name: str
+    quantity: float
+    unit_price: float | None
+    line_total: float
+    user_ids: list[int]
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ExpenseDetail(ExpenseRead):
+    items: list[ExpenseItemRead] = []
+    # None without receipt lines; False when shares were edited after the receipt split (ADR 0010).
+    items_match: bool | None = None
+
+
 class BalanceRead(BaseModel):
     user_id: int
     name: str
@@ -283,3 +299,33 @@ class ReceiptScanList(BaseModel):
 
 class ReceiptAccept(BaseModel):
     expense_id: int
+
+
+class ReceiptSplitLine(BaseModel):
+    name: ShortText
+    quantity: float = Field(default=1, gt=0)
+    unit_price: float | None = None
+    # Negative for discounts.
+    line_total: float
+    user_ids: list[int] = Field(min_length=1)
+
+    @field_validator("unit_price", "line_total")
+    @classmethod
+    def _round(cls, value: float | None) -> float | None:
+        return None if value is None else _round_money(value)
+
+
+class ReceiptSplit(BaseModel):
+    """Save a scan as expense(s) split by its lines (ADR 0010). The server derives the shares."""
+
+    date: datetime.date
+    description: ShortText
+    category: ShortText
+    comment: Comment | None = None
+    # Lines that belong only to the uploader go into a separate personal expense.
+    private_own: bool = False
+    lines: list[ReceiptSplitLine] = Field(min_length=1, max_length=500)
+
+
+class ReceiptSplitResult(BaseModel):
+    expenses: list[ExpenseRead]

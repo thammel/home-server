@@ -4,6 +4,7 @@ import io
 import json
 import logging
 import uuid
+from types import SimpleNamespace
 
 import pypdfium2 as pdfium
 from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile, status
@@ -12,8 +13,10 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy.orm import Session
 
 from app import config, models, schemas
+from app.app_settings import get_setting
 from app.auth import get_current_user, get_db, utcnow
-from app.receipts import scanner, worker
+from app.receipts import scanner, split, worker
+from app.routers.api.expenses import validate_share_users
 
 router = APIRouter()
 log = logging.getLogger("app.receipts")
@@ -224,6 +227,90 @@ def accept(
     scan.expense_id = expense.id
     db.commit()
     return _read(scan)
+
+
+def _expense_from_lines(
+    user: models.User,
+    body: schemas.ReceiptSplit,
+    lines: list[schemas.ReceiptSplitLine],
+    currency: str,
+) -> models.Expense:
+    cents = split.allocate((line.line_total, line.user_ids) for line in lines)
+    total = sum(cents.values())
+    if total <= 0:
+        raise HTTPException(
+            status_code=400, detail="The lines must add up to more than zero"
+        )
+    if any(c < 0 for c in cents.values()):
+        raise HTTPException(
+            status_code=400,
+            detail="Someone's lines add up to less than zero. Give a discount to the people of its item.",
+        )
+    cost = total / 100
+    return models.Expense(
+        date=body.date,
+        description=body.description,
+        category=body.category,
+        cost=cost,
+        currency=currency,
+        comment=body.comment or None,
+        shares=[models.ExpenseShare(user_id=user.id, share=-cost)]
+        + [
+            models.ExpenseShare(user_id=user_id, share=c / 100)
+            for user_id, c in sorted(cents.items())
+            if c
+        ],
+        items=[
+            models.ExpenseItem(
+                position=position,
+                name=line.name,
+                quantity=line.quantity,
+                unit_price=line.unit_price,
+                line_total=line.line_total,
+                users=[
+                    models.ExpenseItemUser(user_id=u)
+                    for u in sorted(set(line.user_ids))
+                ],
+            )
+            for position, line in enumerate(lines)
+        ],
+    )
+
+
+@router.post(
+    "/{scan_id}/split",
+    response_model=schemas.ReceiptSplitResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def split_scan(
+    scan_id: int,
+    body: schemas.ReceiptSplit,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(_member),
+):
+    """Save the scan as an expense split by its lines; the uploader paid (ADR 0010)."""
+    scan = _own_scan(db, user, scan_id)
+    if scan.status not in ("done", "failed"):
+        raise HTTPException(
+            status_code=409, detail="This receipt is not ready for review"
+        )
+    people = {u for line in body.lines for u in line.user_ids}
+    validate_share_users(db, [SimpleNamespace(user_id=u) for u in people])
+
+    own = [line for line in body.lines if set(line.user_ids) == {user.id}]
+    others = [line for line in body.lines if set(line.user_ids) != {user.id}]
+    groups = [own, others] if body.private_own and own and others else [body.lines]
+    currency = get_setting(db, "currency")
+    created = [_expense_from_lines(user, body, lines, currency) for lines in groups]
+    db.add_all(created)
+    db.flush()
+    scan.status = "accepted"
+    # The shared expense, when there are two: deleting it puts the receipt back up for review.
+    scan.expense_id = created[-1].id
+    db.commit()
+    return schemas.ReceiptSplitResult(
+        expenses=[schemas.ExpenseRead.model_validate(e) for e in created]
+    )
 
 
 @router.post("/{scan_id}/retry", response_model=schemas.ReceiptScanRead)

@@ -20,7 +20,7 @@ from sqlalchemy.pool import StaticPool
 from app import config, models
 from app.auth import get_current_user, get_db, hash_password
 from app.database import Base
-from app.receipts import scanner, worker
+from app.receipts import scanner, split, worker
 from app.receipts.scanner import ScanFailed, ScannerUnavailable
 from app.routers.api import expenses, receipts, users
 from app.schemas import ReceiptItem, ReceiptResult
@@ -654,3 +654,168 @@ def test_user_named_on_a_line_cannot_be_deleted(flat):
     expense_id = expense_for(flat, flat["anna"], "Anna", "Ben")
     add_line(flat, expense_id, "Wine", 6.0, "Carl")
     assert flat["admin"].delete(f"/api/users/{flat['ids']['Carl']}").status_code == 409
+
+
+def test_allocate_rounds_once_per_person_and_adds_up():
+    assert split.allocate([(10.0, [1, 2, 3])]) == {1: 334, 2: 333, 3: 333}
+    lines = [(1.0, [1, 2, 3]), (1.0, [1, 2, 3]), (1.0, [1, 2, 3])]
+    assert split.allocate(lines) == {1: 100, 2: 100, 3: 100}
+    lines = [(5.0, [1, 2]), (2.5, [2]), (-0.5, [1, 2])]
+    assert split.allocate(lines) == {1: 225, 2: 475}
+
+
+def done_scan(flat, total=6.0, items=((2, 1.5, 3.0), (1, 3.0, 3.0))):
+    scan_id = upload(flat["anna"], photo()).json()["id"]
+    worker.process_next(flat["db"], FakeScanner(result(total=total, items=items)))
+    return scan_id
+
+
+def split_body(flat, *lines, private_own=False):
+    return {
+        "date": "2026-11-20",
+        "description": "Corner Shop",
+        "category": "Groceries",
+        "private_own": private_own,
+        "lines": [
+            {
+                "name": name,
+                "line_total": amount,
+                "user_ids": [flat["ids"][p] for p in people],
+            }
+            for name, amount, people in lines
+        ],
+    }
+
+
+def shares_of(flat, expense):
+    names = {v: k for k, v in flat["ids"].items()}
+    return sorted((names[s["user_id"]], s["share"]) for s in expense["shares"])
+
+
+def test_split_derives_shares_from_lines(flat):
+    scan_id = done_scan(flat)
+    body = split_body(
+        flat,
+        ("Wine", 10.0, ["Anna", "Ben"]),
+        ("Pasta", 8.5, ["Anna"]),
+        ("Pizza", 9.0, ["Ben"]),
+        ("Discount", -1.0, ["Anna", "Ben"]),
+    )
+    res = flat["anna"].post(f"/api/receipts/{scan_id}/split", json=body)
+    assert res.status_code == 201, res.text
+    [expense] = res.json()["expenses"]
+    assert expense["cost"] == 26.5
+    assert shares_of(flat, expense) == [("Anna", -26.5), ("Anna", 13.0), ("Ben", 13.5)]
+
+    scan = flat["anna"].get(f"/api/receipts/{scan_id}").json()
+    assert (scan["status"], scan["expense_id"]) == ("accepted", expense["id"])
+    detail = flat["ben"].get(f"/api/expenses/{expense['id']}").json()
+    assert [i["name"] for i in detail["items"]] == [
+        "Wine",
+        "Pasta",
+        "Pizza",
+        "Discount",
+    ]
+    assert detail["items"][0]["user_ids"] == sorted(
+        [flat["ids"]["Anna"], flat["ids"]["Ben"]]
+    )
+    assert detail["items_match"] is True
+
+
+def test_split_keeps_own_lines_private_when_asked(flat):
+    scan_id = done_scan(flat)
+    body = split_body(
+        flat,
+        ("Milk", 3.0, ["Anna", "Ben"]),
+        ("Chips", 2.0, ["Anna"]),
+        private_own=True,
+    )
+    shared, personal = sorted(
+        flat["anna"]
+        .post(f"/api/receipts/{scan_id}/split", json=body)
+        .json()["expenses"],
+        key=lambda e: e["personal"],
+    )
+    assert shares_of(flat, shared) == [("Anna", -3.0), ("Anna", 1.5), ("Ben", 1.5)]
+    assert personal["personal"] is True
+    assert personal["cost"] == 2.0
+    assert flat["ben"].get(f"/api/expenses/{personal['id']}").status_code == 404
+    assert [
+        i["name"]
+        for i in flat["anna"].get(f"/api/expenses/{personal['id']}").json()["items"]
+    ] == ["Chips"]
+    assert (
+        flat["anna"].get(f"/api/receipts/{scan_id}").json()["expense_id"]
+        == shared["id"]
+    )
+
+
+def test_split_without_own_lines_or_option_is_one_expense(flat):
+    scan_id = done_scan(flat)
+    body = split_body(flat, ("Milk", 3.0, ["Anna", "Ben"]), ("Chips", 2.0, ["Anna"]))
+    [expense] = (
+        flat["anna"]
+        .post(f"/api/receipts/{scan_id}/split", json=body)
+        .json()["expenses"]
+    )
+    assert expense["cost"] == 5.0
+
+
+@pytest.mark.parametrize(
+    ("lines", "detail"),
+    [
+        ((("Refund", -2.0, ["Anna"]),), "more than zero"),
+        ((("Milk", 3.0, ["Anna"]), ("Coupon", -1.0, ["Ben"])), "less than zero"),
+        ((("Milk", 3.0, ["TestAdmin"]),), "cannot take part"),
+    ],
+    ids=["negative-total", "negative-person", "admin"],
+)
+def test_split_rejects_impossible_splits(flat, lines, detail):
+    scan_id = done_scan(flat)
+    res = flat["anna"].post(
+        f"/api/receipts/{scan_id}/split", json=split_body(flat, *lines)
+    )
+    assert res.status_code == 400
+    assert detail in res.json()["detail"]
+    assert scan_row(flat, scan_id).status == "done"
+    with flat["db"]() as db:
+        assert db.query(models.Expense).count() == 0
+
+
+def test_split_refuses_other_users_scan_and_unready_scan(flat):
+    scan_id = done_scan(flat)
+    body = split_body(flat, ("Milk", 3.0, ["Anna"]))
+    assert (
+        flat["ben"].post(f"/api/receipts/{scan_id}/split", json=body).status_code == 404
+    )
+    queued = upload(flat["anna"], photo()).json()["id"]
+    assert (
+        flat["anna"].post(f"/api/receipts/{queued}/split", json=body).status_code == 409
+    )
+
+
+def test_expense_detail_flags_shares_edited_after_split(flat):
+    scan_id = done_scan(flat)
+    body = split_body(flat, ("Milk", 4.0, ["Anna", "Ben"]))
+    [expense] = (
+        flat["anna"]
+        .post(f"/api/receipts/{scan_id}/split", json=body)
+        .json()["expenses"]
+    )
+    anna, ben = flat["ids"]["Anna"], flat["ids"]["Ben"]
+    res = flat["anna"].patch(
+        f"/api/expenses/{expense['id']}",
+        json={
+            "shares": [{"user_id": anna, "share": -4.0}, {"user_id": ben, "share": 4.0}]
+        },
+    )
+    assert res.status_code == 200, res.text
+    detail = flat["anna"].get(f"/api/expenses/{expense['id']}").json()
+    assert detail["items_match"] is False
+    assert len(detail["items"]) == 1
+
+
+def test_expense_without_lines_has_no_match_flag(flat):
+    expense_id = expense_for(flat, flat["anna"], "Anna", "Ben")
+    detail = flat["anna"].get(f"/api/expenses/{expense_id}").json()
+    assert (detail["items"], detail["items_match"]) == ([], None)

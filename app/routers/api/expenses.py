@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, selectinload
 from app import models, schemas
 from app.app_settings import get_setting
 from app.auth import get_current_user, get_db
+from app.receipts import split
 
 router = APIRouter()
 
@@ -185,7 +186,7 @@ def list_categories(
     return sorted(r[0] for r in query.all() if r[0])
 
 
-@router.get("/{expense_id}", response_model=schemas.ExpenseRead, responses={404: {"description": "Expense not found"}})
+@router.get("/{expense_id}", response_model=schemas.ExpenseDetail, responses={404: {"description": "Expense not found"}})
 def get_expense(
     expense_id: int,
     db: Session = Depends(get_db),
@@ -194,7 +195,9 @@ def get_expense(
     expense = _get_expense_or_404(db, expense_id, _current_user)
     if not _can_view(_current_user, expense):
         raise HTTPException(status_code=403, detail="Forbidden")
-    return expense
+    return schemas.ExpenseDetail.model_validate(expense).model_copy(
+        update={"items_match": split.items_match(expense.items, expense.shares)}
+    )
 
 
 @router.delete("/{expense_id}", status_code=status.HTTP_204_NO_CONTENT,
