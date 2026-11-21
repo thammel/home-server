@@ -535,3 +535,19 @@ dl.meta dd { margin: 0; }
 .receipt-items td.amount { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .scan-entry { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; }
 .scan-entry a[role=button] { margin: 0; }
+
+.split-list { list-style: none; padding: 0; margin: 0 0 0.75rem; }
+.split-list > li { list-style: none; padding: 0.5rem 0; border-bottom: 1px solid var(--pico-muted-border-color); }
+.split-line { display: grid; grid-template-columns: minmax(0, 1fr) 6.5rem; gap: 0.5rem; align-items: center; }
+.split-line input { margin: 0; padding: 0.35rem 0.5rem; height: auto; font-size: 0.9rem; }
+.split-amount { text-align: right; font-variant-numeric: tabular-nums; }
+.split-line-meta { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.35rem; font-size: 0.85rem; }
+.split-line-meta .link-button:last-child { margin-left: auto; }
+.split-owner { display: flex; align-items: center; gap: 0.5rem; }
+.split-chooser { margin-top: 0.4rem; }
+.split-chooser input { margin: 0 0.3rem 0 0; }
+.split-rest .split-line > span:first-child { font-style: italic; }
+.split-people { list-style: none; padding: 0; margin: 0 0 0.5rem; }
+.split-people li { list-style: none; display: flex; justify-content: space-between; font-weight: 600; }
+.split-people .amount { font-variant-numeric: tabular-nums; }
+.split-private { margin: 0.5rem 0 1rem; }

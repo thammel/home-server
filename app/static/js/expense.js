@@ -75,9 +75,23 @@ function showDetails(expense, ctx) {
                         el("td", { class: `num ${net > 0.005 ? "pos" : net < -0.005 ? "neg" : "muted"}` }, signedMoney(net, expense.currency)));
                 })),
             ),
+            receiptLines(expense, nameOf),
             actions,
         ),
     );
+}
+
+function receiptLines(expense, nameOf) {
+    if (!expense.items?.length) return null;
+    const who = (ids) => ids.map(id => nameOf[id] ?? `User ${id}`).join(" + ");
+    return el("details", { class: "receipt-lines", open: expense.items_match === false },
+        el("summary", {}, `Receipt lines (${expense.items.length})`),
+        expense.items_match === false && el("p", { class: "message notice" },
+            "Shares were changed after the receipt split, so they no longer match these lines."),
+        el("table", { class: "receipt-items" },
+            el("tbody", {}, expense.items.map(i => el("tr", {},
+                el("td", {}, i.name, el("br"), el("span", { class: "muted" }, who(i.user_ids))),
+                el("td", { class: "amount" }, money(i.line_total, expense.currency)))))));
 }
 
 function showEdit(expense, ctx) {
